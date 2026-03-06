@@ -2,7 +2,7 @@ name: media service ci
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "**" ]  # Chạy trên mọi branch
     paths:
       - "media/**"
       - ".github/workflows/actions/action.yaml"
