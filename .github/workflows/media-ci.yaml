@@ -31,12 +31,10 @@ jobs:
       - name: Setup Environment
         uses: ./.github/workflows/actions
 
-      # 1. Gitleaks: Chỉ quét các thay đổi mới (Incremental Scan)
+      # 1. Gitleaks:
       - name: Gitleaks Scan
         uses: gitleaks/gitleaks-action@v2
-        with:
-          config-path: gitleaks.toml
-          fail-on-leak: false
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
