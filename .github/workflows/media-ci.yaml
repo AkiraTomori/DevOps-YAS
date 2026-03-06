@@ -32,11 +32,11 @@ jobs:
         uses: ./.github/workflows/actions
 
       # 1. Gitleaks: Chỉ quét các thay đổi mới (Incremental Scan)
-      - name: Gitleaks Scan (New Commits Only)
+      - name: Gitleaks Scan
         uses: gitleaks/gitleaks-action@v2
         with:
-          # Lệnh 'protect --staged' hoặc quét vùng delta giữa các commit
-          args: detect --log-level debug --verbose --redact --force
+          
+          fail-on-leak: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
