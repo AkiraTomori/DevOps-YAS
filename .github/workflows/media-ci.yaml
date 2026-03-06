@@ -20,42 +20,38 @@ on:
 jobs:
   Build:
     runs-on: ubuntu-latest
-    env:
-      FROM_ORIGINAL_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name == github.repository || github.ref == 'refs/heads/main' }}
-    
+    # Loại bỏ logic check Original Repo để ép chạy trên Fork cá nhân
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Vẫn cần fetch-depth để Gitleaks so sánh giữa các commit
+          fetch-depth: 0 
 
       - name: Setup Environment
         uses: ./.github/workflows/actions
 
-      # 1. Gitleaks:
+      # 1. Gitleaks: Quét lỗ hổng bảo mật (Yêu cầu 7c) [cite: 72]
       - name: Gitleaks Scan
         uses: gitleaks/gitleaks-action@v2
-        continue-on-error: true
+        continue-on-error: true 
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 2. Build & Verify (Yêu cầu 5: Phase Test & Build) [cite: 58, 64]
+      # 2. Build & Verify (Yêu cầu 5: Phase test và build) [cite: 58, 64]
       - name: Run Maven Verify
         run: mvn clean verify -pl media -am
 
-      # 3. Snyk: Quét lỗ hổng bảo mật thư viện (Yêu cầu 7c) 
+      # 3. Snyk: Quét lỗ hổng bảo mật (Yêu cầu 7c) [cite: 72]
       - name: Snyk Security Scan
-        if: ${{ env.FROM_ORIGINAL_REPOSITORY == 'true' }}
         uses: snyk/actions/maven@master
         env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }} # Nhớ thêm vào Settings > Secrets
         with:
           args: --file=media/pom.xml
 
       # 4. SonarCloud: Quét chất lượng code (Yêu cầu 7c) [cite: 54, 72]
       - name: Analyze with Sonar
-        if: ${{ env.FROM_ORIGINAL_REPOSITORY == 'true' }}
         env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }} # Nhớ thêm vào Settings > Secrets
         run: |
           mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -f media \
           -Dsonar.organization=${{ github.repository_owner }} \
@@ -64,7 +60,6 @@ jobs:
       # 5. Kiểm tra độ phủ Testcase > 70% (Yêu cầu 7b) [cite: 71]
       - name: Check Coverage Report
         uses: madrapps/jacoco-report@v1.6.1
-        if: ${{ env.FROM_ORIGINAL_REPOSITORY == 'true' }}
         with:
           paths: ${{github.workspace}}/media/target/site/jacoco/jacoco.xml
           token: ${{secrets.GITHUB_TOKEN}}
@@ -81,9 +76,9 @@ jobs:
           path: "media/target/surefire-reports/*.xml"
           reporter: java-junit
 
-      # 7. Build và Push Docker Image (Dành cho vận hành) [cite: 3, 7]
+      # 7. Docker Build & Push (Yêu cầu 3) [cite: 58]
       - name: Log in to Registry
-        if: ${{ github.ref == 'refs/heads/main' }}
+        if: ${{ github.ref == 'refs/heads/main' }} # Chỉ chạy khi merge vào main
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
