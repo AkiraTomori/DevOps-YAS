@@ -93,4 +93,4 @@ jobs:
         with:
           context: ./media
           push: true
-          tags: ghcr.io/${{ github.repository }}/yas-media:latest
+          tags: ghcr.io/akiratomori/devops-yas-ga/yas-media:latest
