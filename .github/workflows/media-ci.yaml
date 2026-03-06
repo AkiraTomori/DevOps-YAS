@@ -36,9 +36,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 2. Build & Verify (Yêu cầu 5: Phase test và build) [cite: 58, 64]
-      - name: Run Maven Verify
-        run: mvn clean verify -pl media -am
+      # 2. Build & Install (Yêu cầu 5: Phase test và build) [cite: 58, 64]
+      - name: Run Maven Install
+        run: mvn clean install -pl media -am
 
       # 3. Snyk: Quét lỗ hổng bảo mật (Yêu cầu 7c) [cite: 72]
       - name: Setup Snyk CLI
