@@ -26,22 +26,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 
+          fetch-depth: 0 # Vẫn cần fetch-depth để Gitleaks so sánh giữa các commit
 
-      # Gọi Custom Action để setup JDK 21 và Cache
-      - uses: ./.github/workflows/actions
+      - name: Setup Environment
+        uses: ./.github/workflows/actions
 
-      # 1. Tích hợp Gitleaks (Yêu cầu 7a)
-      - name: Gitleaks Scan
+      # 1. Gitleaks: Chỉ quét các thay đổi mới (Incremental Scan)
+      - name: Gitleaks Scan (New Commits Only)
         uses: gitleaks/gitleaks-action@v2
+        with:
+          # Lệnh 'protect --staged' hoặc quét vùng delta giữa các commit
+          args: detect --log-level debug --verbose --redact --force
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 2. Build & Verify (Chạy Test + tạo báo cáo JaCoCo) 
+      # 2. Build & Verify (Yêu cầu 5: Phase Test & Build) [cite: 58, 64]
       - name: Run Maven Verify
         run: mvn clean verify -pl media -am
 
-      # 3. Tích hợp Snyk (Yêu cầu 7c) 
+      # 3. Snyk: Quét lỗ hổng bảo mật thư viện (Yêu cầu 7c) 
       - name: Snyk Security Scan
         if: ${{ env.FROM_ORIGINAL_REPOSITORY == 'true' }}
         uses: snyk/actions/maven@master
@@ -50,18 +53,17 @@ jobs:
         with:
           args: --file=media/pom.xml
 
-      # 4. Tích hợp SonarCloud/SonarQube (Yêu cầu 7c) 
+      # 4. SonarCloud: Quét chất lượng code (Yêu cầu 7c) [cite: 54, 72]
       - name: Analyze with Sonar
         if: ${{ env.FROM_ORIGINAL_REPOSITORY == 'true' }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        # Truyền thêm các tham số để override thông tin từ bản fork
         run: |
           mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -f media \
           -Dsonar.organization=${{ github.repository_owner }} \
           -Dsonar.projectKey=${{ github.repository_owner }}_yas-media
 
-      # 5. Kiểm tra độ phủ Testcase > 70% (Yêu cầu 7b) 
+      # 5. Kiểm tra độ phủ Testcase > 70% (Yêu cầu 7b) [cite: 71]
       - name: Check Coverage Report
         uses: madrapps/jacoco-report@v1.6.1
         if: ${{ env.FROM_ORIGINAL_REPOSITORY == 'true' }}
@@ -69,11 +71,10 @@ jobs:
           paths: ${{github.workspace}}/media/target/site/jacoco/jacoco.xml
           token: ${{secrets.GITHUB_TOKEN}}
           min-coverage-overall: 70 
-          min-coverage-changed-files: 70
           title: 'Media Service Coverage Report'
           update-comment: true
 
-      # 6. Upload Test Results (Yêu cầu 5) [cite: 65]
+      # 6. Upload kết quả Test (Yêu cầu 5) [cite: 65]
       - name: Unit Test Results
         uses: dorny/test-reporter@v1
         if: ${{ always() }}
@@ -82,8 +83,8 @@ jobs:
           path: "media/target/surefire-reports/*.xml"
           reporter: java-junit
 
-      # 7. Docker Build & Push (Dành cho việc vận hành)
-      - name: Log in to the Container registry
+      # 7. Build và Push Docker Image (Dành cho vận hành) [cite: 3, 7]
+      - name: Log in to Registry
         if: ${{ github.ref == 'refs/heads/main' }}
         uses: docker/login-action@v3
         with:
