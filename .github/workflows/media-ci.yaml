@@ -37,7 +37,7 @@ jobs:
 
       # 2. Build & Install: Cài đặt library dùng chung và build media (Yêu cầu 5, 6)
       - name: Run Maven Install
-        run: mvn clean install -pl media -am -DskipTests
+        run: mvn clean install -pl media -am
 
       # 3. Snyk: Quét bảo mật dependencies (Yêu cầu 7c)
       - name: Setup Snyk CLI
