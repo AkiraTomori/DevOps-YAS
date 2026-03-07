@@ -52,23 +52,13 @@ jobs:
       - name: Setup Snyk CLI
         uses: snyk/actions/setup@master
 
-      - name: Snyk Security Scan
+      - name: Snyk Security Scan (Static)
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-          NODE_OPTIONS: --max-old-space-size=4096
         run: |
-          mvn install -N -Drevision=1.0-SNAPSHOT
-          mvn install -pl common-library -am -DskipTests -Drevision=1.0-SNAPSHOT
-          
+          # Không cần mvn install, chỉ đứng đúng thư mục và quét file
           cd media
-          
-          snyk monitor --file=pom.xml \
-            --org=akiratomori \
-            --severity-threshold=high \
-            --command=mvn \
-            --prune-repeated-subdependencies \
-            --dev \
-            -- -Drevision=1.0-SNAPSHOT -DskipTests
+          snyk monitor --file=pom.xml --org=akiratomori-2 --project-name=yas-media-static
         continue-on-error: true
 
       # 4. SonarCloud: Quét chất lượng code (Yêu cầu 7c)
