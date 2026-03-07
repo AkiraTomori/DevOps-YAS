@@ -18,6 +18,7 @@ on:
       - "pom.xml"
   workflow_dispatch:  # Cho phép chạy thủ công nếu cần
 
+# Hello world
 permissions:
   contents: read
   pull-requests: write
