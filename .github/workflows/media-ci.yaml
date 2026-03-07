@@ -49,11 +49,14 @@ jobs:
         run: mvn clean install -pl media -am
 
       # 3. Snyk: Quét bảo mật dependencies (Yêu cầu 7c)
+      - name: Grant Execute Permission to Maven Wrapper
+        run: chmod +x media/mvnw
+        
       - name: Setup Snyk CLI
         uses: snyk/actions/setup@master
 
       - name: Snyk Security Scan
-        run: snyk test --file=media/pom.xml -d --severity-threshold=high
+        run: snyk test --file=media/pom.xml --severity-threshold=high
         continue-on-error: true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
