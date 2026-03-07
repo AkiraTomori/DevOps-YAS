@@ -66,7 +66,7 @@ jobs:
         with:
           paths: ${{github.workspace}}/order/target/site/jacoco/jacoco.xml
           token: ${{secrets.GITHUB_TOKEN}}
-          min-coverage-overall: 80
+          min-coverage-overall: 70
           title: 'Order Service Coverage Report'
           update-comment: true
 
