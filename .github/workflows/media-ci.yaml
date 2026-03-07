@@ -57,10 +57,12 @@ jobs:
 
       - name: Snyk Security Scan
         run: |
-          snyk test --file=media/pom.xml \
+          cd media
+          
+          snyk test --file=pom.xml \
             --severity-threshold=high \
             --prune-repeated-subdependencies \
-            -- --Drevision=1.0-SNAPSHOT
+            -- -Drevision=1.0-SNAPSHOT
         continue-on-error: true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
