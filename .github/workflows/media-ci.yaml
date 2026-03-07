@@ -48,32 +48,28 @@ jobs:
       - name: Run Maven Install
         run: mvn clean install -pl media -am
         
+      # 3. Snyk: Quét bảo mật dependencies (Yêu cầu 7c)
       - name: Setup Snyk CLI
         uses: snyk/actions/setup@master
 
-      # 3. Snyk: Quét bảo mật dependencies (Yêu cầu 7c)
       - name: Snyk Security Scan
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-          NODE_OPTIONS: --max-old-space-size=4096
         run: |
-          # 1. Cấp quyền thực thi cho Maven Wrapper ở gốc
-          chmod +x mvnw || true
+          # 1. "Mồi" Parent POM vào local repository (.m2) sử dụng lệnh mvn hệ thống
+          # Cờ -N giúp Maven chỉ cài đúng file pom.xml gốc
+          mvn install -N -Drevision=1.0-SNAPSHOT
           
-          # 2. "Mồi" Parent POM vào local repository (.m2) của máy ảo
-          # Cờ -N giúp Maven chỉ cài đúng file pom.xml gốc mà không chạy vào module con
-          ./mvnw install -N -Drevision=1.0-SNAPSHOT
+          # 2. Cài đặt Common Library vào cache máy ảo
+          mvn install -pl common-library -am -DskipTests -Drevision=1.0-SNAPSHOT
           
-          # 3. Cài đặt Common Library (vì Media phụ thuộc vào nó)
-          # -pl trỏ đến module, -am đảm bảo build các module phụ thuộc của nó
-          ./mvnw install -pl common-library -am -DskipTests -Drevision=1.0-SNAPSHOT
-          
-          # 4. Quét bảo mật tập trung cho duy nhất module Media
-          # Bỏ --all-projects để tránh lỗi 403 Forbidden và tiết kiệm RAM
+          # 3. Quét bảo mật tập trung cho module Media
+          # Sử dụng --command=mvn để báo cho Snyk dùng lệnh mvn hệ thống thay vì mvnw
           snyk test --file=media/pom.xml \
             --severity-threshold=high \
-            --org=akiratomori-2 \
+            --org=akiratomori \
             --prune-repeated-subdependencies \
+            --command=mvn \
             -- -Drevision=1.0-SNAPSHOT -DskipTests
         continue-on-error: true
 
