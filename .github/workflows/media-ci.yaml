@@ -47,24 +47,35 @@ jobs:
       # 2. Build & Install: Cài đặt library dùng chung và build media (Yêu cầu 5, 6)
       - name: Run Maven Install
         run: mvn clean install -pl media -am
-
-      # 3. Snyk: Quét bảo mật dependencies (Yêu cầu 7c)
-      - name: Grant Execute Permission to Maven Wrapper
-        run: find . -name "mvnw" -exec chmod +x {} +
         
       - name: Setup Snyk CLI
         uses: snyk/actions/setup@master
 
+      # 3. Snyk: Quét bảo mật dependencies (Yêu cầu 7c)
       - name: Snyk Security Scan
-        run: |
-          snyk test --all-projects \
-            --severity-threshold=high \
-            --prune-repeated-subdependencies \
-            --detection-depth=3 \
-            -- -Drevision=1.0-SNAPSHOT -DskipTests
-        continue-on-error: true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: |
+          # 1. Cấp quyền thực thi cho Maven Wrapper ở gốc
+          chmod +x mvnw || true
+          
+          # 2. "Mồi" Parent POM vào local repository (.m2) của máy ảo
+          # Cờ -N giúp Maven chỉ cài đúng file pom.xml gốc mà không chạy vào module con
+          ./mvnw install -N -Drevision=1.0-SNAPSHOT
+          
+          # 3. Cài đặt Common Library (vì Media phụ thuộc vào nó)
+          # -pl trỏ đến module, -am đảm bảo build các module phụ thuộc của nó
+          ./mvnw install -pl common-library -am -DskipTests -Drevision=1.0-SNAPSHOT
+          
+          # 4. Quét bảo mật tập trung cho duy nhất module Media
+          # Bỏ --all-projects để tránh lỗi 403 Forbidden và tiết kiệm RAM
+          snyk test --file=media/pom.xml \
+            --severity-threshold=high \
+            --org=akiratomori-2 \
+            --prune-repeated-subdependencies \
+            -- -Drevision=1.0-SNAPSHOT -DskipTests
+        continue-on-error: true
 
       # 4. SonarCloud: Quét chất lượng code (Yêu cầu 7c)
       # LƯU Ý: Thay đổi 'YOUR_ORG_KEY' và 'YOUR_PROJECT_KEY' bằng giá trị trên SonarCloud của bạn
