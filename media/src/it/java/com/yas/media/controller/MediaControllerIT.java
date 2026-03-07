@@ -52,7 +52,7 @@ class MediaControllerIT extends AbstractControllerIT {
     @Autowired
     private MediaService mediaService;
     private Media media;
-
+    // Hello World
     public static InputStream createFakeInputStream(String content) {
         return new ByteArrayInputStream(content.getBytes());
     }

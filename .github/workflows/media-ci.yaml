@@ -29,6 +29,8 @@ jobs:
       - name: Setup Environment
         uses: ./.github/workflows/actions
 
+        
+
       # 1. Gitleaks: Kiểm tra lộ Secret (Yêu cầu 7c)
       - name: Gitleaks Scan
         uses: gitleaks/gitleaks-action@v2
