@@ -58,14 +58,16 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=4096
         run: |
           mvn install -N -Drevision=1.0-SNAPSHOT
-          
           mvn install -pl common-library -am -DskipTests -Drevision=1.0-SNAPSHOT
           
+          mvn dependency:tree -pl media -am -Drevision=1.0-SNAPSHOT -DskipTests > media_deps.txt
+          
           snyk test --file=media/pom.xml \
-            --severity-threshold=high \
             --org=akiratomori \
-            --prune-repeated-subdependencies \
+            --severity-threshold=high \
             --command=mvn \
+            --prune-repeated-subdependencies \
+            --dev \
             -- -Drevision=1.0-SNAPSHOT -DskipTests
         continue-on-error: true
 
