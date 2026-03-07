@@ -50,9 +50,7 @@ jobs:
 
       # 3. Snyk: Quét bảo mật dependencies (Yêu cầu 7c)
       - name: Grant Execute Permission to Maven Wrapper
-        run: |
-          chmod +x mvnw
-          chmod +x media/mvnw
+        run: chmod +x media/mvnw
         
       - name: Setup Snyk CLI
         uses: snyk/actions/setup@master
