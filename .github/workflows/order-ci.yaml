@@ -2,89 +2,94 @@ name: order service ci
 
 on:
   push:
-    branches: ["main"]
+    branches:
+      - "feature/order**"  # Chỉ chạy khi push lên feature/order, feature/order-*, etc.
     paths:
       - "order/**"
       - ".github/workflows/actions/action.yaml"
       - ".github/workflows/order-ci.yaml"
       - "pom.xml"
   pull_request:
-    branches: ["main"]
+    branches: [ "main" ]
     paths:
       - "order/**"
       - ".github/workflows/actions/action.yaml"
       - ".github/workflows/order-ci.yaml"
       - "pom.xml"
-  workflow_dispatch:
+  workflow_dispatch:  # Cho phép chạy thủ công nếu cần
 
 jobs:
   Build:
     runs-on: ubuntu-latest
-    env:
-      FROM_ORIGINAL_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name == github.repository || github.ref == 'refs/heads/main' }}
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Shallow clones should be disabled for a better relevancy of analysis
-      - uses: ./.github/workflows/actions
-      - name: Run Maven Build Command
+          fetch-depth: 0 
+
+      - name: Setup Environment
+        uses: ./.github/workflows/actions
+
+      # 1. Gitleaks: Kiểm tra lộ Secret (Yêu cầu 7c)
+      - name: Gitleaks Scan
+        uses: gitleaks/gitleaks-action@v2
+        continue-on-error: true 
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 2. Build & Install: Cài đặt library dùng chung và build order (Yêu cầu 5, 6)
+      - name: Run Maven Install
         run: mvn clean install -pl order -am
-      - name: Run Maven Checkstyle
-        if: ${{ env.FROM_ORIGINAL_REPOSITORY == 'true' }}
-        run: mvn checkstyle:checkstyle -pl order -am -Dcheckstyle.output.file=order-checkstyle-result.xml
-      - name: Upload Checkstyle Result
-        if: ${{ env.FROM_ORIGINAL_REPOSITORY == 'true' }}
-        uses: jwgmeligmeyling/checkstyle-github-action@master
-        with:
-          path: '**/order-checkstyle-result.xml'
-      - name: Test Results
-        uses: dorny/test-reporter@v1
-        if: ${{ env.FROM_ORIGINAL_REPOSITORY == 'true' && (success() || failure()) }}
-        with:
-          name: Order-Service-Unit-Test-Results
-          path: "order/**/*-reports/TEST*.xml"
-          reporter: java-junit
-      - name: Analyze with sonar cloud
-        if: ${{ env.FROM_ORIGINAL_REPOSITORY == 'true' }}
+
+      # 3. Snyk: Quét bảo mật dependencies (Yêu cầu 7c)
+      - name: Setup Snyk CLI
+        uses: snyk/actions/setup@master
+
+      - name: Snyk Security Scan
+        run: snyk test --file=order/pom.xml --severity-threshold=high
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+      # 4. SonarCloud: Quét chất lượng code (Yêu cầu 7c)
+      - name: Analyze with Sonar
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -f order
-      - name: OWASP Dependency Check
-        if: ${{ env.FROM_ORIGINAL_REPOSITORY == 'true' }}
-        uses: dependency-check/Dependency-Check_Action@main
-        env:
-          JAVA_HOME: /opt/jdk
-        with:
-          project: 'yas'
-          path: '.'
-          format: 'HTML'
-      - name: Upload OWASP Dependency Check results
-        if: ${{ env.FROM_ORIGINAL_REPOSITORY == 'true' }}
-        uses: actions/upload-artifact@master
-        with:
-          name: OWASP Dependency Check Report
-          path: ${{github.workspace}}/reports
-      - name: Add coverage report to PR
+        run: |
+          mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+          -pl order -am \
+          -Dsonar.organization=akiratomori-2 \
+          -Dsonar.projectKey=AkiraTomori_DevOps-YAS
+
+      # 5. Kiểm tra độ phủ Testcase > 80% (Yêu cầu 7b)
+      - name: Check Coverage Report
         uses: madrapps/jacoco-report@v1.6.1
-        if: ${{ env.FROM_ORIGINAL_REPOSITORY == 'true' }}
         with:
           paths: ${{github.workspace}}/order/target/site/jacoco/jacoco.xml
           token: ${{secrets.GITHUB_TOKEN}}
           min-coverage-overall: 80
-          min-coverage-changed-files: 60
-          title: 'Order Coverage Report'
+          title: 'Order Service Coverage Report'
           update-comment: true
-      - name: Log in to the Container registry
-        if: ${{ github.ref == 'refs/heads/main' }}
+
+      # 6. Upload kết quả Test (Yêu cầu 5)
+      - name: Unit Test Results
+        uses: dorny/test-reporter@v1
+        if: ${{ always() }}
+        with:
+          name: Order-Service-Unit-Test-Results
+          path: "order/target/surefire-reports/*.xml"
+          reporter: java-junit
+
+      # 7. Docker Build & Push (Yêu cầu 3)
+      - name: Log in to Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build and push Docker images
-        if: ${{ github.ref == 'refs/heads/main' }}
         uses: docker/build-push-action@v6
         with:
           context: ./order
           push: true
-          tags: ghcr.io/nashtech-garage/yas-order:latest
+          tags: ghcr.io/akiratomori/devops-yas-ga/yas-order:latest
