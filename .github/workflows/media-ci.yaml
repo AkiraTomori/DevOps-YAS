@@ -60,7 +60,7 @@ jobs:
           mvn install -N -Drevision=1.0-SNAPSHOT
           mvn install -pl common-library -am -DskipTests -Drevision=1.0-SNAPSHOT
           
-          mvn dependency:tree -pl media -am -Drevision=1.0-SNAPSHOT -DskipTests > media_deps.txt
+          cd media
           
           snyk test --file=media/pom.xml \
             --org=akiratomori \
