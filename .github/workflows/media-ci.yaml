@@ -55,16 +55,12 @@ jobs:
       - name: Snyk Security Scan
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+          NODE_OPTIONS: --max-old-space-size=4096
         run: |
-          # 1. "Mồi" Parent POM vào local repository (.m2) sử dụng lệnh mvn hệ thống
-          # Cờ -N giúp Maven chỉ cài đúng file pom.xml gốc
           mvn install -N -Drevision=1.0-SNAPSHOT
           
-          # 2. Cài đặt Common Library vào cache máy ảo
           mvn install -pl common-library -am -DskipTests -Drevision=1.0-SNAPSHOT
           
-          # 3. Quét bảo mật tập trung cho module Media
-          # Sử dụng --command=mvn để báo cho Snyk dùng lệnh mvn hệ thống thay vì mvnw
           snyk test --file=media/pom.xml \
             --severity-threshold=high \
             --org=akiratomori \
