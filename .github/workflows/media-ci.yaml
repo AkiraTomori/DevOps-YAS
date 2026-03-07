@@ -62,7 +62,7 @@ jobs:
           
           cd media
           
-          snyk test --file=media/pom.xml \
+          snyk test --file=pom.xml \
             --org=akiratomori \
             --severity-threshold=high \
             --command=mvn \
