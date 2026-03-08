@@ -92,12 +92,6 @@ jobs:
           title: 'Media Service Coverage Report'
           update-comment: true
 
-      - name: Upload JaCoCo HTML Report
-        uses: actions/upload-artifact@v4
-        with: 
-          name: jacoco-report-media
-          path: media/target/site/jacoco/
-
       # 6. Upload kết quả Test (Yêu cầu 5)
       - name: Unit Test Results
         uses: dorny/test-reporter@v1
