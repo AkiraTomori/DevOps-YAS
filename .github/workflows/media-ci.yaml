@@ -18,6 +18,12 @@ on:
       - "pom.xml"
   workflow_dispatch:  # Cho phép chạy thủ công nếu cần
 
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+  packages: write
+
 jobs:
   Build:
     runs-on: ubuntu-latest
@@ -41,16 +47,29 @@ jobs:
       # 2. Build & Install: Cài đặt library dùng chung và build media (Yêu cầu 5, 6)
       - name: Run Maven Install
         run: mvn clean install -pl media -am
-
+        
       # 3. Snyk: Quét bảo mật dependencies (Yêu cầu 7c)
       - name: Setup Snyk CLI
         uses: snyk/actions/setup@master
 
       - name: Snyk Security Scan
-        run: snyk test --file=media/pom.xml --severity-threshold=high
-        continue-on-error: true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: |
+          mvn install -N -Drevision=1.0-SNAPSHOT
+          mvn install -pl common-library -am -DskipTests -Drevision=1.0-SNAPSHOT
+          
+          cd media
+          
+          snyk test --file=pom.xml \
+            --org=akiratomori \
+            --severity-threshold=high \
+            --command=mvn \
+            --prune-repeated-subdependencies \
+            --dev \
+            -- -Drevision=1.0-SNAPSHOT -DskipTests
+        continue-on-error: true
 
       # 4. SonarCloud: Quét chất lượng code (Yêu cầu 7c)
       # LƯU Ý: Thay đổi 'YOUR_ORG_KEY' và 'YOUR_PROJECT_KEY' bằng giá trị trên SonarCloud của bạn
