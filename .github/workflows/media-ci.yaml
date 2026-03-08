@@ -52,13 +52,23 @@ jobs:
       - name: Setup Snyk CLI
         uses: snyk/actions/setup@master
 
-      - name: Snyk Security Scan (Static)
+      - name: Snyk Security Scan
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+          NODE_OPTIONS: --max-old-space-size=4096
         run: |
-          # Không cần mvn install, chỉ đứng đúng thư mục và quét file
+          mvn install -N -Drevision=1.0-SNAPSHOT
+          mvn install -pl common-library -am -DskipTests -Drevision=1.0-SNAPSHOT
+          
           cd media
-          snyk monitor --file=pom.xml --org=akiratomori-2 --project-name=yas-media-static
+          
+          snyk test --file=pom.xml \
+            --org=akiratomori \
+            --severity-threshold=high \
+            --command=mvn \
+            --prune-repeated-subdependencies \
+            --dev \
+            -- -Drevision=1.0-SNAPSHOT -DskipTests
         continue-on-error: true
 
       # 4. SonarCloud: Quét chất lượng code (Yêu cầu 7c)
@@ -81,6 +91,12 @@ jobs:
           min-coverage-overall: 70 
           title: 'Media Service Coverage Report'
           update-comment: true
+
+      - name: Upload JaCoCo HTML Report
+        uses: actions/upload-artifact@v4
+        with: 
+          name: jacoco-report-media
+          path: media/target/site/jacoco/
 
       # 6. Upload kết quả Test (Yêu cầu 5)
       - name: Unit Test Results
