@@ -78,7 +78,7 @@ jobs:
         continue-on-error: false
       
       # Upload báo cáo coverage để tham chiếu sau (Yêu cầu 7b)
-      - name: Archive Product Coverage Report
+      - name: Archive Cart Coverage Report
         uses: actions/upload-artifact@v4
         with:
           name: cart-service-coverage-report
