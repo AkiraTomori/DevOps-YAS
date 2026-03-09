@@ -76,6 +76,13 @@ jobs:
           title: 'Order Service Coverage Report'
           update-comment: true
         continue-on-error: false
+      
+      # Upload báo cáo coverage để tham chiếu sau (Yêu cầu 7b)
+      - name: Archive Order Coverage Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: order-service-coverage-report
+          path: order/target/site/jacoco/
 
       # 6. Upload kết quả Test (Yêu cầu 5)
       - name: Unit Test Results
