@@ -21,7 +21,7 @@ class DatabaseAutoConfigTest {
     private DatabaseAutoConfig databaseAutoConfig;
 
     @Test
-    void testAuditorAware_whenAuthenticationIsNull_shouldReturnEmptyString() {
+    void testAuditorAware_whenAuthenticationIsNull_shouldReturnSystem() {
         // Arrange
         SecurityContextHolder.clearContext();
 
@@ -31,7 +31,7 @@ class DatabaseAutoConfigTest {
 
         // Assert
         assertTrue(auditor.isPresent());
-        assertEquals("", auditor.get());
+        assertEquals("system", auditor.get());
     }
 
     @Test
@@ -64,5 +64,27 @@ class DatabaseAutoConfigTest {
 
         // Assert
         assertNotNull(auditorAware);
+    }
+
+    @Test
+    void testAuditorAware_whenAuthenticationNameIsNull_shouldReturnSystem() {
+        // Arrange
+        SecurityContext securityContext = mock(SecurityContext.class);
+        Authentication authentication = mock(Authentication.class);
+
+        when(authentication.getName()).thenReturn(null);
+        when(securityContext.getAuthentication()).thenReturn(authentication);
+        SecurityContextHolder.setContext(securityContext);
+
+        // Act
+        AuditorAware<String> auditorAware = databaseAutoConfig.auditorAware();
+        Optional<String> auditor = auditorAware.getCurrentAuditor();
+
+        // Assert
+        assertTrue(auditor.isPresent());
+        assertEquals("system", auditor.get());
+
+        // Cleanup
+        SecurityContextHolder.clearContext();
     }
 }
