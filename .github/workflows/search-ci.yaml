@@ -75,6 +75,7 @@ jobs:
           min-coverage-overall: 70
           title: 'Search Service Coverage Report'
           update-comment: true
+        continue-on-error: false
 
       # 6. Upload kết quả Test (Yêu cầu 5)
       - name: Unit Test Results
