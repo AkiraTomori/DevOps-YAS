@@ -76,6 +76,13 @@ jobs:
           title: 'Inventory Service Coverage Report'
           update-comment: true
         continue-on-error: false
+      
+      # Upload báo cáo coverage để tham chiếu sau (Yêu cầu 7b)
+      - name: Archive Inventory Coverage Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: inventory-service-coverage-report
+          path: inventory/target/site/jacoco/
 
       # 6. Upload kết quả Test (Yêu cầu 5)
       - name: Unit Test Results
