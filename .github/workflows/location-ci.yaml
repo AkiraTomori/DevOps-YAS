@@ -70,6 +70,13 @@ jobs:
           title: 'Location Service Coverage Report'
           update-comment: true
 
+        # Upload báo cáo coverage để tham chiếu sau (Yêu cầu 7b)
+      - name: Archive Location Coverage Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: location-service-coverage-report
+          path: location/target/site/jacoco/
+
       # 6. Upload kết quả Test (Yêu cầu 5)
       - name: Unit Test Results
         uses: dorny/test-reporter@v1
