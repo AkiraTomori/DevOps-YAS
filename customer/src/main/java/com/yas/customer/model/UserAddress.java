@@ -31,4 +31,20 @@ public class UserAddress extends AbstractAuditEntity {
     private Long addressId;
 
     private Boolean isActive;
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof UserAddress)) {
+            return false;
+        }
+        return id != null && id.equals(((UserAddress) o).id);
+    }
+
+    @Override
+    public int hashCode() {
+        return getClass().hashCode();
+    }
 }
