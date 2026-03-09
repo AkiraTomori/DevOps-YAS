@@ -18,6 +18,12 @@ on:
       - "pom.xml"
   workflow_dispatch:  # Cho phép chạy thủ công nếu cần
 
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+  packages: write
+
 jobs:
   Build:
     runs-on: ubuntu-latest
@@ -45,10 +51,10 @@ jobs:
         uses: snyk/actions/setup@master
 
       - name: Snyk Security Scan
-        run: snyk test --file=cart/pom.xml --severity-threshold=high
-        continue-on-error: true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: snyk test -d --file=cart/pom.xml --org=akiratomori --severity-threshold=high --command=mvn
+        continue-on-error: true
 
       # 4. SonarCloud: Quét chất lượng code (Yêu cầu 7c)
       - name: Analyze with Sonar
