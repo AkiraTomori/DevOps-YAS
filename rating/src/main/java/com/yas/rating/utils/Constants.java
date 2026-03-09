@@ -1,6 +1,9 @@
 package com.yas.rating.utils;
 
 public final class Constants {
+    private Constants() {
+    }
+    
     public final class ErrorCode {
         public static final String RATING_NOT_FOUND = "RATING_NOT_FOUND";
         public static final String PRODUCT_NOT_FOUND = "PRODUCT_NOT_FOUND";

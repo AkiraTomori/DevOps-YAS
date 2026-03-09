@@ -164,16 +164,29 @@ class RatingServiceTest {
 
     @Test
     void createRating_ExistedRating_ShouldThrowResourceExistedException() {
+        // First, save a rating with userId as createdBy and productId = 1L
+        Rating existingRating = Rating.builder()
+            .content("existing comment")
+            .ratingStar(5)
+            .productId(1L)
+            .productName("product1")
+            .firstName("Test")
+            .lastName("User")
+            .build();
+        existingRating.setCreatedBy(userId);
+        ratingRepository.save(existingRating);
+        
         RatingPostVm ratingPostVm = RatingPostVm.builder().productId(1L).content("comment 4").productName("product3").star(4).build();
 
         Jwt jwt = mock(Jwt.class);
         JwtAuthenticationToken authentication = mock(JwtAuthenticationToken.class);
         SecurityContextHolder.getContext().setAuthentication(authentication);
         when(authentication.getToken()).thenReturn(jwt);
-        when(authentication.getName()).thenReturn("");
-        when(jwt.getSubject()).thenReturn("");
+        when(authentication.getName()).thenReturn(userId);
+        when(jwt.getSubject()).thenReturn(userId);
 
         when(orderService.checkOrderExistsByProductAndUserWithStatus(anyLong())).thenReturn(new OrderExistsByProductAndUserGetVm(true));
+        when(customerService.getCustomer()).thenReturn(new CustomerVm(userId, "test@test.com", "Test", "User"));
 
         ResourceExistedException exception = assertThrows(ResourceExistedException.class,
                 () -> ratingService.createRating(ratingPostVm));
