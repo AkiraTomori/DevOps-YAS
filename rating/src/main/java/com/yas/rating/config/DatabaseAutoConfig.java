@@ -21,7 +21,7 @@ public class DatabaseAutoConfig {
         return () -> {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             if (auth == null) {
-                return Optional.of("");
+                return Optional.of("system");
             }
             return Optional.of(auth.getName());
         };
