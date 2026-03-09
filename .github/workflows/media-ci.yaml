@@ -35,8 +35,6 @@ jobs:
       - name: Setup Environment
         uses: ./.github/workflows/actions
 
-        
-
       # 1. Gitleaks: Kiểm tra lộ Secret (Yêu cầu 7c)
       - name: Gitleaks Scan
         uses: gitleaks/gitleaks-action@v2
@@ -55,20 +53,7 @@ jobs:
       - name: Snyk Security Scan
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-          NODE_OPTIONS: --max-old-space-size=4096
-        run: |
-          mvn install -N -Drevision=1.0-SNAPSHOT
-          mvn install -pl common-library -am -DskipTests -Drevision=1.0-SNAPSHOT
-          
-          cd media
-          
-          snyk test --file=pom.xml \
-            --org=akiratomori \
-            --severity-threshold=high \
-            --command=mvn \
-            --prune-repeated-subdependencies \
-            --dev \
-            -- -Drevision=1.0-SNAPSHOT -DskipTests
+        run: snyk test -d --file=media/pom.xml --severity-threshold=high --command=mvn
         continue-on-error: true
 
       # 4. SonarCloud: Quét chất lượng code (Yêu cầu 7c)
