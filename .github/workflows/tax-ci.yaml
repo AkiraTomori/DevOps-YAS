@@ -42,11 +42,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 2. Build & Install: Cài đặt library dùng chung và build tax (Yêu cầu 5, 6)
+      # 2. Build & Install: Cài đặt library dùng chung và build tax (skip IT để tránh phụ thuộc Docker/Testcontainers ở job unit-ci)
       - name: Run Maven Install
-        run: mvn clean install -pl tax -am
+        run: mvn clean install -pl tax -am -DskipITs
 
-      # 3. Snyk: Quét bảo mật dependencies (Yêu cầu 7c)
+      # 3. Unit test: chạy riêng để xuất báo cáo surefire ổn định
+      - name: Run Maven Unit Tests
+        run: mvn test -pl tax -am
+
+      # 4. Snyk: Quét bảo mật dependencies (Yêu cầu 7c)
       - name: Setup Snyk CLI
         uses: snyk/actions/setup@master
 
@@ -56,7 +60,7 @@ jobs:
         run: snyk test -d --file=tax/pom.xml --org=akiratomori --severity-threshold=high --command=mvn
         continue-on-error: true
 
-      # 4. SonarCloud: Quét chất lượng code (Yêu cầu 7c)
+      # 5. SonarCloud: Quét chất lượng code (Yêu cầu 7c)
       - name: Analyze with Sonar
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -66,7 +70,7 @@ jobs:
           -Dsonar.organization=akiratomori-2 \
           -Dsonar.projectKey=AkiraTomori_DevOps-YAS
 
-      # 5. Kiểm tra độ phủ Testcase > 80% (Yêu cầu 7b)
+      # 6. Kiểm tra độ phủ Testcase > 80% (Yêu cầu 7b)
       - name: Check Coverage Report
         uses: madrapps/jacoco-report@v1.6.1
         with:
@@ -84,7 +88,7 @@ jobs:
           name: tax-service-coverage-report
           path: tax/target/site/jacoco/
 
-      # 6. Upload kết quả Test (Yêu cầu 5)
+      # 7. Upload kết quả Test (Yêu cầu 5)
       - name: Unit Test Results
         uses: dorny/test-reporter@v1
         if: ${{ always() }}
@@ -93,7 +97,7 @@ jobs:
           path: "tax/target/surefire-reports/*.xml"
           reporter: java-junit
 
-      # 7. Docker Build & Push (Yêu cầu 3)
+      # 8. Docker Build & Push (Yêu cầu 3)
       - name: Log in to Registry
         uses: docker/login-action@v3
         with:
