@@ -49,7 +49,11 @@ jobs:
 
       # 3. Unit test: chạy riêng để xuất báo cáo surefire ổn định
       - name: Run Maven Unit Tests
-        run: mvn test -pl order -am jacoco:report
+        run: |
+          mvn test -pl order -am \
+          org.jacoco:jacoco-maven-plugin:0.8.11:check \
+          -Djacoco.check.line.coveredRatio=0.70 \
+          -Djacoco.check.branch.coveredRatio=0.70
 
       # 4. Snyk: Quét bảo mật dependencies (Yêu cầu 7c)
       - name: Setup Snyk CLI
