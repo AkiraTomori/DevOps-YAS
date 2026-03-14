@@ -18,6 +18,8 @@ on:
       - "pom.xml"
   workflow_dispatch:  # Cho phép chạy thủ công nếu cần
 
+
+# Quyền hạn cần thiết để workflow hoạt động (Yêu cầu 7c)
 permissions:
   contents: read
   pull-requests: write
