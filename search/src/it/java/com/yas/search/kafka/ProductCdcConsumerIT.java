@@ -25,7 +25,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,7 +37,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 @Import(KafkaIntegrationTestConfiguration.class)
 @PropertySource("classpath:application.properties")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-public class ProductCdcConsumerTest extends CdcConsumerTest<ProductMsgKey, ProductCdcMessage> {
+public class ProductCdcConsumerIT extends CdcConsumerTest<ProductMsgKey, ProductCdcMessage> {
 
     public static final String STOREFRONT_PRODUCTS_ES_PATH = "/storefront/products-es/{id}";
 
@@ -54,7 +53,7 @@ public class ProductCdcConsumerTest extends CdcConsumerTest<ProductMsgKey, Produ
     @SpyBean
     private ProductSyncDataService productSyncDataService;
 
-    public ProductCdcConsumerTest() {
+    public ProductCdcConsumerIT() {
         super(ProductMsgKey.class, ProductCdcMessage.class, "dbproduct.public.product");
     }
 
@@ -67,19 +66,15 @@ public class ProductCdcConsumerTest extends CdcConsumerTest<ProductMsgKey, Produ
     @Test
     public void test_whenHavingCreateEvent_shouldSyncAsCreate()
         throws ExecutionException, InterruptedException, TimeoutException {
-        // Given
         long productId = 1L;
         ProductEsDetailVm response = getSampleProduct();
 
-        // When
-        // Simulate Product Detail API response
         final URI url = UriComponentsBuilder.fromHttpUrl(serviceUrlConfig.product())
             .path(STOREFRONT_PRODUCTS_ES_PATH)
             .buildAndExpand(productId)
             .toUri();
         simulateHttpRequestWithResponse(url, response, ProductEsDetailVm.class);
 
-        // Sending CDC Event
         sendMsg(
             ProductMsgKey.builder().id(productId).build(),
             ProductCdcMessage.builder()
@@ -88,12 +83,9 @@ public class ProductCdcConsumerTest extends CdcConsumerTest<ProductMsgKey, Produ
                 .build()
         );
 
-        // Then
-        // Verify consumer
         waitForConsumer(2, 1, 0, 0);
         verify(productSyncDataService, times(1)).createProduct(productId);
 
-        // Verify ES Sync data
         Optional<com.yas.search.model.Product> product = productRepository.findById(productId);
         assertTrue(product.isPresent(), "ElasticSearch must create data accordingly to CDC event.");
     }
@@ -102,18 +94,14 @@ public class ProductCdcConsumerTest extends CdcConsumerTest<ProductMsgKey, Produ
     @Test
     public void test_whenHavingCreateEvent_thenProcessFailed_shouldPerformRetry()
         throws ExecutionException, InterruptedException, TimeoutException {
-        // Given
         long productId = 1L;
 
-        // When
-        // Simulate Product Detail API throw errors
         final URI url = UriComponentsBuilder.fromHttpUrl(serviceUrlConfig.product())
             .path(STOREFRONT_PRODUCTS_ES_PATH)
             .buildAndExpand(productId)
             .toUri();
         simulateHttpRequestWithError(url, new RuntimeException("Invalid Request"), ProductEsDetailVm.class);
 
-        // Sending CDC Event
         sendMsg(
             ProductMsgKey.builder().id(productId).build(),
             ProductCdcMessage.builder()
@@ -122,7 +110,6 @@ public class ProductCdcConsumerTest extends CdcConsumerTest<ProductMsgKey, Produ
                 .build()
         );
 
-        // Then
         waitForConsumer(2, 1, 4, 6);
         verify(productSyncDataService, times(4)).createProduct(productId);
     }
@@ -131,23 +118,18 @@ public class ProductCdcConsumerTest extends CdcConsumerTest<ProductMsgKey, Produ
     @Test
     public void test_whenHavingUpdateEvent_shouldSyncAsUpdate()
         throws ExecutionException, InterruptedException, TimeoutException {
-        // Given
         long productId = 1L;
         ProductEsDetailVm response = getSampleProduct();
 
-        // Create existing product
         com.yas.search.model.Product product = getSampleEsProduct(productId);
         productRepository.save(product);
 
-        // When
-        // Simulate Product Detail API response
         final URI url = UriComponentsBuilder.fromHttpUrl(serviceUrlConfig.product())
             .path(STOREFRONT_PRODUCTS_ES_PATH)
             .buildAndExpand(productId)
             .toUri();
         simulateHttpRequestWithResponse(url, response, ProductEsDetailVm.class);
 
-        // Sending CDC Event
         sendMsg(
             ProductMsgKey.builder().id(productId).build(),
             ProductCdcMessage.builder()
@@ -156,13 +138,10 @@ public class ProductCdcConsumerTest extends CdcConsumerTest<ProductMsgKey, Produ
                 .build()
         );
 
-        // Then
-        // Verify Consumer
         waitForConsumer(2, 1, 0, 0);
         verify(productSyncDataService, times(1)).updateProduct(productId);
         Optional<com.yas.search.model.Product> updated = productRepository.findById(productId);
 
-        // Verify ES sync data
         assertTrue(updated.isPresent(), "ElasticSearch must have product data.");
         assertEquals(updated.get().getName(), response.name(), "Product name must be updated.");
     }
@@ -171,38 +150,30 @@ public class ProductCdcConsumerTest extends CdcConsumerTest<ProductMsgKey, Produ
     @Test
     public void test_whenHavingDeleteEvent_shouldSyncAsDelete()
         throws ExecutionException, InterruptedException, TimeoutException {
-        // Given
         long productId = 1L;
         ProductEsDetailVm response = getSampleProduct();
 
-        // Create existing product
         com.yas.search.model.Product product = getSampleEsProduct(productId);
         productRepository.save(product);
 
-        // When
-        // Simulate Product Detail API response
         final URI url = UriComponentsBuilder.fromHttpUrl(serviceUrlConfig.product())
             .path(STOREFRONT_PRODUCTS_ES_PATH)
             .buildAndExpand(productId)
             .toUri();
         simulateHttpRequestWithResponse(url, response, ProductEsDetailVm.class);
 
-        // Sending CDC Event
         sendMsg(
             ProductMsgKey.builder().id(productId).build(),
             ProductCdcMessage.builder()
-            .op(DELETE)
-            .after(Product.builder().id(productId).isPublished(true).build())
-            .build()
+                .op(DELETE)
+                .after(Product.builder().id(productId).isPublished(true).build())
+                .build()
         );
 
-        // Then
-        // Verify Consumer
         waitForConsumer(2, 1, 0, 0);
         verify(productSyncDataService, times(1)).deleteProduct(productId);
         Optional<com.yas.search.model.Product> updated = productRepository.findById(productId);
 
-        // Verify ES sync data
         assertTrue(updated.isEmpty(), "ElasticSearch must remove product data.");
     }
 
