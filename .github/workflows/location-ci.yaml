@@ -47,9 +47,17 @@ jobs:
       - name: Run Maven Install
         run: mvn clean install -pl location -am -DskipITs
 
-      # 3. Unit test: chạy riêng để xuất báo cáo surefire ổn định
       - name: Run Maven Unit Tests
-        run: mvn test -pl location -am
+        run: |
+          mvn clean test jacoco:report \
+          org.jacoco:jacoco-maven-plugin:0.8.11:check \
+          -pl location -am \
+          -Djacoco.breakBuildOnModifications=true \
+          -Djacoco.check.line.coveredRatio=0.70 \
+          -Djacoco.check.branch.coveredRatio=0.70 \
+          -Djacoco.check.instruction.coveredRatio=0.70 \
+          -Djacoco.check.method.coveredRatio=0.70 \
+          -Djacoco.check.class.coveredRatio=0.70
 
       # 4. Snyk: Quét bảo mật dependencies (Yêu cầu 7c)
       - name: Setup Snyk CLI
@@ -80,7 +88,7 @@ jobs:
           min-coverage-overall: 70
           title: 'Location Service Coverage Report'
           update-comment: true
-        continue-on-error: false
+          continue-on-error: false
 
         # Upload báo cáo coverage để tham chiếu sau (Yêu cầu 7b)
       - name: Archive Location Coverage Report
