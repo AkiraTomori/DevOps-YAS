@@ -3,6 +3,7 @@ name: cart service ci
 on:
   push:
     branches:
+      - "main"
       - "feature/cart**"  # Chỉ chạy khi push lên feature/cart, feature/cart-*, etc.
     paths:
       - "cart/**"

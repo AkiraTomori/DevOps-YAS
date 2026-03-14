@@ -3,6 +3,7 @@ name: inventory service ci
 on:
   push:
     branches:
+      - "main"
       - "feature/inventory**"  # Chỉ chạy khi push lên feature/inventory, feature/inventory-*, etc.
     paths:
       - "inventory/**"
