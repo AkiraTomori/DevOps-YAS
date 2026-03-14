@@ -49,7 +49,7 @@ jobs:
 
       # 3. Unit test: chạy riêng để xuất báo cáo surefire ổn định
       - name: Run Maven Unit Tests
-        run: mvn test -pl customer -am
+        run: mvn test -pl customer -am jacoco:report
 
       # 4. Snyk: Quét bảo mật dependencies (Yêu cầu 7c)
       - name: Setup Snyk CLI
@@ -80,6 +80,7 @@ jobs:
           min-coverage-overall: 70
           title: 'Customer Service Coverage Report'
           update-comment: true
+          continue-on-error: false
         continue-on-error: false
         
       # 7. Upload kết quả Test (Yêu cầu 5)
