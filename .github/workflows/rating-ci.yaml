@@ -3,6 +3,7 @@ name: rating service ci
 on:
   push:
     branches:
+      - "main"
       - "feature/rating**"  # Chỉ chạy khi push lên feature/rating, feature/rating-*, etc.
     paths:
       - "rating/**"

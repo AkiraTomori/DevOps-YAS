@@ -3,6 +3,7 @@ name: product service ci
 on:
   push:
     branches:
+      - "main"
       - "feature/product**"  # Chỉ chạy khi push lên feature/product, feature/product-*, etc.
     paths:
       - "product/**"

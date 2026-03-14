@@ -3,6 +3,7 @@ name: search service ci
 on:
   push:
     branches:
+      - "main"
       - "feature/search**"  # Chỉ chạy khi push lên feature/search, feature/search-*, etc.
     paths:
       - "search/**"

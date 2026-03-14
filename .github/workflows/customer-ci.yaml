@@ -3,6 +3,7 @@ name: customer service ci
 on:
   push:
     branches:
+      - "main"
       - "feature/customer**"  # Chỉ chạy khi push lên feature/customer, feature/customer-*, etc.
     paths:
       - "customer/**"

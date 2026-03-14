@@ -3,6 +3,7 @@ name: tax service ci
 on:
   push:
     branches:
+      - "main"
       - "feature/tax**"  # Chỉ chạy khi push lên feature/tax, feature/tax-*, etc.
     paths:
       - "tax/**"

@@ -3,6 +3,7 @@ name: location service ci
 on:
   push:
     branches:
+      - "main"
       - "feature/location**"  # Chỉ chạy khi push lên feature/location, feature/location-*, etc.
     paths:
       - "location/**"
