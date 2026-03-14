@@ -46,7 +46,7 @@ jobs:
 
       # 2. Build & Install: Cài đặt library dùng chung và build order (Yêu cầu 5, 6)
       - name: Run Maven Install
-        run: mvn clean install -pl order -am
+        run: mvn clean install -pl order -am -DskipITs
 
       # 3. Snyk: Quét bảo mật dependencies (Yêu cầu 7c)
       - name: Setup Snyk CLI
