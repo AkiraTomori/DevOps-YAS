@@ -81,6 +81,13 @@ jobs:
           update-comment: true
         continue-on-error: false
 
+      # Upload báo cáo coverage để tham chiếu sau (Yêu cầu 7b)
+      - name: Archive Search Coverage Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: search-service-coverage-report
+          path: search/target/site/jacoco/
+
       # 7. Upload kết quả Test (Yêu cầu 5)
       - name: Unit Test Results
         uses: dorny/test-reporter@v1
