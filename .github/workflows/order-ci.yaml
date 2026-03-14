@@ -77,7 +77,7 @@ jobs:
           min-coverage-overall: 70
           title: 'Order Service Coverage Report'
           update-comment: true
-        continue-on-error: false
+          continue-on-error: false
       
       # Upload báo cáo coverage để tham chiếu sau (Yêu cầu 7b)
       - name: Archive Order Coverage Report
