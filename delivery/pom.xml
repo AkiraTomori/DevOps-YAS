@@ -18,7 +18,7 @@
     <properties>
         <sonar.organization>akiratomori-2</sonar.organization>
         <sonar.host.url>https://sonarcloud.io</sonar.host.url>
-        <sonar.projectKey>AkiraTomori_DevOps-YAS</sonar.projectKey>
+        <sonar.projectKey>AkiraTomori_DevOps-YAS-delivery</sonar.projectKey>
     </properties>
 
 </project>

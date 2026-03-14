@@ -14,7 +14,7 @@
     <description>Backend for backoffice</description>
     <properties>
         <sonar.organization>akiratomori-2</sonar.organization>
-        <sonar.projectKey>AkiraTomori_DevOps-YAS</sonar.projectKey>
+        <sonar.projectKey>AkiraTomori_DevOps-YAS-backoffice-bff</sonar.projectKey>
     </properties>
     <dependencies>
         <dependency>
