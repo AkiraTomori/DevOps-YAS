@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - "main"
-      - "feature/media**"  # Chỉ chạy khi push lên feature/media, feature/media-*, etc.
+      - "feature/media**"
     paths:
       - "media/**"
       - ".github/workflows/actions/action.yaml"
@@ -17,7 +17,7 @@ on:
       - ".github/workflows/actions/action.yaml"
       - ".github/workflows/media-ci.yaml"
       - "pom.xml"
-  workflow_dispatch:  # Cho phép chạy thủ công nếu cần
+  workflow_dispatch: # Cho phép chạy thủ công nếu cần
 
 permissions:
   contents: read
@@ -26,7 +26,8 @@ permissions:
   packages: write
 
 jobs:
-  Build:
+  # PHASE 1: TEST & QUALITY SCAN
+  Test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,22 +37,22 @@ jobs:
       - name: Setup Environment
         uses: ./.github/workflows/actions
 
-      # 1. Gitleaks: Kiểm tra lộ Secret (Yêu cầu 7c)
+      # 1. Gitleaks: Quét Secret
       - name: Gitleaks Scan
         uses: gitleaks/gitleaks-action@v2
         continue-on-error: true 
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 2. Build & Install: Cài đặt library dùng chung và build media (skip IT để tránh phụ thuộc Docker/Testcontainers ở job unit-ci)
+      # 2. Build & Install: Skip toàn bộ Test để chuẩn bị môi trường nhanh
       - name: Run Maven Install
-        run: mvn clean install -pl media -am -DskipITs
+        run: mvn clean install -pl media -am -DskipTests -DskipITs
 
-      # 3. Unit test: chạy riêng để xuất báo cáo surefire ổn định
+      # 3. Unit Test: Chỉ chạy Unit Test và xuất báo cáo JaCoCo
       - name: Run Maven Unit Tests
-        run: mvn test -pl media -am jacoco:report
-        
-      # 4. Snyk: Quét bảo mật dependencies (Yêu cầu 7c)
+        run: mvn test -pl media -am jacoco:report -DskipITs
+
+      # 4. Snyk: Quét bảo mật Dependencies
       - name: Setup Snyk CLI
         uses: snyk/actions/setup@master
 
@@ -61,8 +62,7 @@ jobs:
         run: snyk test -d --file=media/pom.xml --org=akiratomori --severity-threshold=high --command=mvn
         continue-on-error: true
 
-      # 5. SonarCloud: Quét chất lượng code (Yêu cầu 7c)
-      # LƯU Ý: Thay đổi 'YOUR_ORG_KEY' và 'YOUR_PROJECT_KEY' bằng giá trị trên SonarCloud của bạn
+      # 5. SonarCloud: Quét chất lượng code
       - name: Analyze with Sonar
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -72,7 +72,7 @@ jobs:
           -Dsonar.organization=akiratomori-2 \
           -Dsonar.projectKey=AkiraTomori_DevOps-YAS
 
-      # 6. Kiểm tra độ phủ Testcase > 70% (Yêu cầu 7b)
+      # 6. Kiểm tra độ phủ Unit Test > 70%
       - name: Check Coverage Report
         uses: madrapps/jacoco-report@v1.6.1
         with:
@@ -100,15 +100,29 @@ jobs:
           path: "media/target/surefire-reports/*.xml"
           reporter: java-junit
 
-      # 8. Docker Build & Push (Yêu cầu 3)
-      - name: Log in to Registry
+  # PHASE 2: BUILD & PUSH DOCKER (Chỉ chạy khi PR vào main và Phase Test thành công)
+  Build:
+    needs: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Environment
+        uses: ./.github/workflows/actions
+
+      - name: Build Package
+        run: mvn clean package -pl media -am -DskipTests -DskipITs -Dcheckstyle.skip
+
+      - name: Log in to GHCR
+        if: github.ref == 'refs/heads/main'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push Docker images
+      - name: Build and push Docker image
+        if: github.ref == 'refs/heads/main'
         uses: docker/build-push-action@v6
         with:
           context: ./media
