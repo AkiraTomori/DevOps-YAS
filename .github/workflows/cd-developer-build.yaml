@@ -69,18 +69,20 @@ jobs:
       #   uses: azure/setup-kubectl@v4
 
       - name: Configure kubeconfig
-        shell: bash
+        shell: pwsh 
         run: |
-          set -euo pipefail
-          mkdir -p "$HOME/.kube"
-
-          if echo "$KUBE_CONFIG" | grep -q "apiVersion:"; then
-            printf '%s' "$KUBE_CONFIG" > "$HOME/.kube/config"
-          else
-            printf '%s' "$KUBE_CONFIG" | base64 -d > "$HOME/.kube/config"
-          fi
-
-          chmod 600 "$HOME/.kube/config"
+          $kubeDir = "$env:USERPROFILE\.kube"
+          if (!(Test-Path $kubeDir)) { New-Item -ItemType Directory -Path $kubeDir }
+          
+          $targetFile = "$kubeDir\config"
+          $configData = $env:KUBE_CONFIG
+          
+          if ($configData -match "apiVersion:") {
+              $configData | Out-File -FilePath $targetFile -Encoding ascii
+          } else {
+              [System.Convert]::FromBase64String($configData) | Set-Content -Path $targetFile -Encoding Byte
+          }
+          
           kubectl get nodes
 
       - name: Resolve image tags from branch inputs
