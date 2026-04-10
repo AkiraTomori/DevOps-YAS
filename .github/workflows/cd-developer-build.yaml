@@ -69,32 +69,28 @@ jobs:
       - name: Configure kubeconfig
         shell: powershell
         env:
-          # Ép kiểu dữ liệu thô từ Secret vào biến môi trường
           KUBE_RAW: ${{ secrets.KUBE_CONFIG }}
         run: |
-          $kubeDir = "$env:USERPROFILE\.kube"
-          if (!(Test-Path $kubeDir)) { New-Item -ItemType Directory -Path $kubeDir | Out-Null }
-          $targetFile = "$kubeDir\config"
-
-          # Lấy dữ liệu trực tiếp từ biến môi trường của Job
+          # 1. Tạo file config tạm ngay tại thư mục Workspace của Job
+          $localConfig = Join-Path $pwd "runner-kubeconfig"
           $data = $env:KUBE_RAW.Trim()
 
           if ($data -match "apiVersion:") {
-              # Nếu là YAML, ghi đè bằng phương thức System.IO để giữ nguyên định dạng
-              [System.IO.File]::WriteAllText($targetFile, $data, [System.Text.Encoding]::UTF8)
-              Write-Host "Saved as Plain-text YAML."
+              [System.IO.File]::WriteAllText($localConfig, $data, [System.Text.Encoding]::UTF8)
           } else {
-              # Nếu là Base64, dọn dẹp sạch sẽ ký tự lạ
               $cleanBase64 = $data -replace '\s',''
               $bytes = [System.Convert]::FromBase64String($cleanBase64)
-              [System.IO.File]::WriteAllBytes($targetFile, $bytes)
-              Write-Host "Decoded from Base64."
+              [System.IO.File]::WriteAllBytes($localConfig, $bytes)
           }
 
-          # Thử đọc 1 dòng đầu để kiểm tra định dạng
-          Get-Content $targetFile -TotalCount 1
+          # 2. THIẾT LẬP QUAN TRỌNG: Ép các bước sau dùng file này
+          echo "KUBECONFIG=$localConfig" >> $env:GITHUB_ENV
+          
+          Write-Host "Kubeconfig is isolated at: $localConfig"
+          # Đợi 1 giây để biến môi trường được cập nhật
+          Start-Sleep -s 1
           kubectl get nodes
-
+        
       - name: Resolve image tags from branch inputs
         id: resolve
         run: |
