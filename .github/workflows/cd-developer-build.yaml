@@ -114,6 +114,34 @@ jobs:
           echo "search_tag=$(Resolve-Tag '${{ inputs.search_branch }}')" >> $env:GITHUB_OUTPUT
           echo "tax_tag=$(Resolve-Tag '${{ inputs.tax_branch }}')" >> $env:GITHUB_OUTPUT
 
+      - name: Deploy shared configuration (required ConfigMaps/Secrets)
+        run: |
+          $configChart = "k8s/charts/yas-configuration"
+          Write-Host "--- Deploying yas-configuration chart to namespace $env:NAMESPACE ---"
+          helm dependency build $configChart
+          helm upgrade --install yas-configuration $configChart `
+            --namespace $env:NAMESPACE `
+            --create-namespace
+
+      - name: Verify required shared resources
+        run: |
+          $requiredConfigMaps = @(
+            "yas-configuration-configmap",
+            "cart-application-configmap",
+            "customer-application-configmap",
+            "media-application-configmap",
+            "order-application-configmap",
+            "product-application-configmap",
+            "search-application-configmap"
+          )
+
+          foreach ($cm in $requiredConfigMaps) {
+            kubectl get configmap $cm -n $env:NAMESPACE | Out-Null
+          }
+
+          kubectl get secret yas-postgresql-credentials-secret -n $env:NAMESPACE | Out-Null
+          Write-Host "--- Shared resources are present in namespace $env:NAMESPACE ---"
+
       - name: Deploy selected service images
         run: |
           function Deploy-Service($service, $tag) {
@@ -134,7 +162,7 @@ jobs:
                     --set "serviceMonitor.enabled=false"
 
                   # Rollout status để kiểm tra nhưng không dùng để làm fail Job nếu chưa kịp lên
-                  kubectl rollout status deployment/$service -n $env:NAMESPACE --timeout=60s
+                  kubectl rollout status deployment/$service -n $env:NAMESPACE --timeout=300s
               }
           }
 
