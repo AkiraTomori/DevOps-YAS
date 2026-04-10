@@ -48,6 +48,10 @@ jobs:
   developer-build:
     name: Developer Build And Deploy
     runs-on: self-hosted
+    # Thiết lập shell mặc định là powershell cho toàn bộ các bước bên dưới
+    defaults:
+      run:
+        shell: powershell 
     permissions:
       contents: read
     env:
@@ -62,14 +66,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      # - name: Setup Helm
-      #   uses: azure/setup-helm@v4
-
-      # - name: Setup kubectl
-      #   uses: azure/setup-kubectl@v4
-
       - name: Configure kubeconfig
-        shell: powershell 
         run: |
           $kubeDir = "$env:USERPROFILE\.kube"
           if (!(Test-Path $kubeDir)) { New-Item -ItemType Directory -Path $kubeDir }
@@ -80,118 +77,84 @@ jobs:
           if ($configData -match "apiVersion:") {
               $configData | Out-File -FilePath $targetFile -Encoding ascii
           } else {
-              [System.Convert]::FromBase64String($configData) | Set-Content -Path $targetFile -Encoding Byte
+              # Giải mã base64 chuẩn Windows PowerShell
+              [System.IO.File]::WriteAllBytes($targetFile, [System.Convert]::FromBase64String($configData))
           }
           
           kubectl get nodes
 
       - name: Resolve image tags from branch inputs
         id: resolve
-        shell: bash
         run: |
-          set -euo pipefail
-
-          resolve_tag() {
-            local branch="$1"
-            if [ "$branch" = "main" ] || [ "$branch" = "latest" ]; then
-              echo "$DEFAULT_TAG"
-              return
-            fi
-
-            local sha
-            sha=$(git ls-remote origin "refs/heads/$branch" | awk '{print $1}')
-            if [ -z "$sha" ]; then
-              echo "ERROR: Cannot resolve branch '$branch' on remote origin" >&2
-              exit 1
-            fi
-            echo "$sha"
+          # Chuyển logic shell sang PowerShell để tương thích 100% với Windows Runner
+          function Resolve-Tag($branch) {
+              if ($branch -eq "main" -or $branch -eq "latest") { return $env:DEFAULT_TAG }
+              $sha = (git ls-remote origin "refs/heads/$branch" | ForEach-Object { $_.Split("`t")[0] })
+              if (-not $sha) { 
+                  Write-Error "Cannot resolve branch '$branch'"
+                  exit 1 
+              }
+              return $sha
           }
 
-          echo "cart_tag=$(resolve_tag "${{ inputs.cart_branch }}")" >> "$GITHUB_OUTPUT"
-          echo "customer_tag=$(resolve_tag "${{ inputs.customer_branch }}")" >> "$GITHUB_OUTPUT"
-          echo "inventory_tag=$(resolve_tag "${{ inputs.inventory_branch }}")" >> "$GITHUB_OUTPUT"
-          echo "location_tag=$(resolve_tag "${{ inputs.location_branch }}")" >> "$GITHUB_OUTPUT"
-          echo "media_tag=$(resolve_tag "${{ inputs.media_branch }}")" >> "$GITHUB_OUTPUT"
-          echo "order_tag=$(resolve_tag "${{ inputs.order_branch }}")" >> "$GITHUB_OUTPUT"
-          echo "product_tag=$(resolve_tag "${{ inputs.product_branch }}")" >> "$GITHUB_OUTPUT"
-          echo "rating_tag=$(resolve_tag "${{ inputs.rating_branch }}")" >> "$GITHUB_OUTPUT"
-          echo "search_tag=$(resolve_tag "${{ inputs.search_branch }}")" >> "$GITHUB_OUTPUT"
-          echo "tax_tag=$(resolve_tag "${{ inputs.tax_branch }}")" >> "$GITHUB_OUTPUT"
+          echo "cart_tag=$(Resolve-Tag '${{ inputs.cart_branch }}')" >> $env:GITHUB_OUTPUT
+          echo "customer_tag=$(Resolve-Tag '${{ inputs.customer_branch }}')" >> $env:GITHUB_OUTPUT
+          echo "inventory_tag=$(Resolve-Tag '${{ inputs.inventory_branch }}')" >> $env:GITHUB_OUTPUT
+          echo "location_tag=$(Resolve-Tag '${{ inputs.location_branch }}')" >> $env:GITHUB_OUTPUT
+          echo "media_tag=$(Resolve-Tag '${{ inputs.media_branch }}')" >> $env:GITHUB_OUTPUT
+          echo "order_tag=$(Resolve-Tag '${{ inputs.order_branch }}')" >> $env:GITHUB_OUTPUT
+          echo "product_tag=$(Resolve-Tag '${{ inputs.product_branch }}')" >> $env:GITHUB_OUTPUT
+          echo "rating_tag=$(Resolve-Tag '${{ inputs.rating_branch }}')" >> $env:GITHUB_OUTPUT
+          echo "search_tag=$(Resolve-Tag '${{ inputs.search_branch }}')" >> $env:GITHUB_OUTPUT
+          echo "tax_tag=$(Resolve-Tag '${{ inputs.tax_branch }}')" >> $env:GITHUB_OUTPUT
 
       - name: Deploy selected service images
-        shell: bash
         run: |
-          set -euo pipefail
+          function Deploy-Service($service, $tag) {
+              $chartPath = "k8s/charts/$service"
+              if (Test-Path $chartPath) {
+                  Write-Host "Deploying $service with tag $tag..."
+                  helm dependency build $chartPath
+                  helm upgrade --install $service $chartPath `
+                    --namespace $env:NAMESPACE `
+                    --create-namespace `
+                    --set "backend.image.repository=$($env:DOCKERHUB_USERNAME)/yas-$service" `
+                    --set "backend.image.tag=$tag" `
+                    --set "backend.service.type=NodePort"
 
-          deploy_service() {
-            local service="$1"
-            local tag="$2"
-
-            if [ -d "k8s/charts/$service" ]; then
-              helm dependency build "k8s/charts/$service"
-              helm upgrade --install "$service" "k8s/charts/$service" \
-                --namespace "$NAMESPACE" \
-                --create-namespace \
-                --set "backend.image.repository=$DOCKERHUB_USERNAME/yas-$service" \
-                --set "backend.image.tag=$tag" \
-                --set "backend.service.type=NodePort"
-
-              kubectl rollout status deployment/"$service" -n "$NAMESPACE" --timeout=180s
-            else
-              echo "Warning: Chart for $service not found in k8s/charts/$service"
-            fi
+                  kubectl rollout status deployment/$service -n $env:NAMESPACE --timeout=180s
+              } else {
+                  Write-Warning "Chart for $service not found."
+              }
           }
 
-          deploy_service cart "${{ steps.resolve.outputs.cart_tag }}"
-          deploy_service customer "${{ steps.resolve.outputs.customer_tag }}"
-          deploy_service inventory "${{ steps.resolve.outputs.inventory_tag }}"
-          deploy_service location "${{ steps.resolve.outputs.location_tag }}"
-          deploy_service media "${{ steps.resolve.outputs.media_tag }}"
-          deploy_service order "${{ steps.resolve.outputs.order_tag }}"
-          deploy_service product "${{ steps.resolve.outputs.product_tag }}"
-          deploy_service rating "${{ steps.resolve.outputs.rating_tag }}"
-          deploy_service search "${{ steps.resolve.outputs.search_tag }}"
-          deploy_service tax "${{ steps.resolve.outputs.tax_tag }}"
+          Deploy-Service "cart" "${{ steps.resolve.outputs.cart_tag }}"
+          Deploy-Service "customer" "${{ steps.resolve.outputs.customer_tag }}"
+          Deploy-Service "inventory" "${{ steps.resolve.outputs.inventory_tag }}"
+          Deploy-Service "location" "${{ steps.resolve.outputs.location_tag }}"
+          Deploy-Service "media" "${{ steps.resolve.outputs.media_tag }}"
+          Deploy-Service "order" "${{ steps.resolve.outputs.order_tag }}"
+          Deploy-Service "product" "${{ steps.resolve.outputs.product_tag }}"
+          Deploy-Service "rating" "${{ steps.resolve.outputs.rating_tag }}"
+          Deploy-Service "search" "${{ steps.resolve.outputs.search_tag }}"
+          Deploy-Service "tax" "${{ steps.resolve.outputs.tax_tag }}"
 
-      - name: Publish deploy summary (NodePort)
-        shell: bash
+      - name: Publish deploy summary
         run: |
-          set -euo pipefail
+          $NODE_IP = (kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+          if (-not $NODE_IP) { $NODE_IP = "<worker-node-ip>" }
 
-          # Lấy IP của Worker Node trong cụm
-          NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
-          if [ -z "$NODE_IP" ]; then
-            NODE_IP="<worker-node-ip>"
-          fi
+          "## Developer_build summary" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          "**Node IP**: ``$NODE_IP``" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          "🔧 **Action required**: Add hosts entry: ``$NODE_IP yas.local``" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          "### NodePort endpoints" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
 
-          {
-            echo "## Developer_build summary"
-            echo ""
-            echo "**Node IP**: \`$NODE_IP\`"
-            echo ""
-            echo "🔧 **Action required**: Add hosts entry on your machine:"
-            echo "\`$NODE_IP yas.local\`"
-            echo ""
-            echo "### Resolved image tags"
-            echo "- cart: \`${{ steps.resolve.outputs.cart_tag }}\`"
-            echo "- customer: \`${{ steps.resolve.outputs.customer_tag }}\`"
-            echo "- inventory: \`${{ steps.resolve.outputs.inventory_tag }}\`"
-            echo "- location: \`${{ steps.resolve.outputs.location_tag }}\`"
-            echo "- media: \`${{ steps.resolve.outputs.media_tag }}\`"
-            echo "- order: \`${{ steps.resolve.outputs.order_tag }}\`"
-            echo "- product: \`${{ steps.resolve.outputs.product_tag }}\`"
-            echo "- rating: \`${{ steps.resolve.outputs.rating_tag }}\`"
-            echo "- search: \`${{ steps.resolve.outputs.search_tag }}\`"
-            echo "- tax: \`${{ steps.resolve.outputs.tax_tag }}\`"
-            echo ""
-            echo "### NodePort endpoints"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          for svc in cart customer inventory location media order product rating search tax; do
-            port=$(kubectl get svc "$svc" -n "$NAMESPACE" -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null || echo "")
-            if [ -z "$port" ]; then
-              echo "- $svc: NodePort not found" >> "$GITHUB_STEP_SUMMARY"
-            else
-              echo "- $svc: http://yas.local:$port" >> "$GITHUB_STEP_SUMMARY"
-            fi
-          done
+          $services = "cart", "customer", "inventory", "location", "media", "order", "product", "rating", "search", "tax"
+          foreach ($svc in $services) {
+              $port = (kubectl get svc $svc -n $env:NAMESPACE -o jsonpath='{.spec.ports[0].nodePort}' 2>$null)
+              if ($port) {
+                  "- $svc: http://yas.local:$port" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+              } else {
+                  "- $svc: Not found" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+              }
+          }
