@@ -1,130 +1,222 @@
-name: location service ci
+﻿name: location service ci
 
 on:
   push:
-    branches:
-      - "main"
-      - "feature/location**"
+    branches: ["**"]
     paths:
       - "location/**"
       - ".github/workflows/actions/action.yaml"
       - ".github/workflows/location-ci.yaml"
       - "pom.xml"
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
     paths:
       - "location/**"
       - ".github/workflows/actions/action.yaml"
       - ".github/workflows/location-ci.yaml"
       - "pom.xml"
-  workflow_dispatch: # Cho phép chạy thủ công nếu cần
-
-permissions:
-  contents: read
-  pull-requests: write
-  checks: write
-  packages: write
+  workflow_dispatch:
 
 jobs:
-  # PHASE 1: TEST & QUALITY SCAN
-  Test:
+  # ─────────────────────────────────────────────
+  # PHASE 1 – TEST
+  # Runs on every push to give developers early feedback.
+  # ─────────────────────────────────────────────
+  test:
+    name: Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 
+          fetch-depth: 0 # Required for SonarCloud blame history and Gitleaks full log scan
 
-      - name: Setup Environment
-        uses: ./.github/workflows/actions
+      - uses: ./.github/workflows/actions # Setup JDK 21, cache Maven & Sonar
 
-      # 1. Gitleaks: Quét Secret
-      - name: Gitleaks Scan
+      # Scan for secrets leaked in commit history
+      - name: Gitleaks – Scan for leaked secrets
         uses: gitleaks/gitleaks-action@v2
-        continue-on-error: true 
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 2. Build & Install: Skip toàn bộ Test để chuẩn bị môi trường nhanh
-      - name: Run Maven Install
-        run: mvn clean install -pl location -am -DskipTests -DskipITs
+      # -am builds all dependencies before verifying the location module
+      - name: Run Maven Verify (test + coverage)
+        run: |
+          mvn install -pl common-library -am -DskipTests
+          mvn -B clean verify -pl location -am -DskipITs
 
-      # 3. Unit Test: Chỉ chạy Unit Test và xuất báo cáo JaCoCo
-      - name: Run Maven Unit Tests
-        run: mvn test -pl location -am jacoco:report -DskipITs
+      # Checkstyle requires reactor context for CI-friendly versioning
+      - name: Run Maven Checkstyle
+        run: mvn checkstyle:checkstyle -pl location -am -Dcheckstyle.output.file=location-checkstyle-result.xml
 
-      # 4. Snyk: Quét bảo mật Dependencies
-      - name: Setup Snyk CLI
-        uses: snyk/actions/setup@master
+      - name: Upload Checkstyle Result
+        uses: jwgmeligmeyling/checkstyle-github-action@master
+        with:
+          path: "**/location-checkstyle-result.xml"
 
-      - name: Snyk Security Scan
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        run: snyk test -d --file=location/pom.xml --org=akiratomori --severity-threshold=high --command=mvn
-        continue-on-error: true
+      # Publish test results to PR/commit page
+      - name: Upload Test Results
+        uses: dorny/test-reporter@v1
+        if: success() || failure() # Run even on failure to show report
+        with:
+          name: location-Service-Unit-Test-Results
+          path: "location/**/surefire-reports/TEST*.xml"
+          reporter: java-junit
 
-      # 5. SonarCloud: Quét chất lượng code
-      - name: Analyze with Sonar
+      # Posts coverage comment on PR; fails if overall coverage < 70%.
+      # Works with branch protection "require status checks" to block low-coverage merges.
+      - name: Add Coverage Report to PR
+        id: jacoco
+        uses: madrapps/jacoco-report@v1.6.1
+        with:
+          paths: ${{ github.workspace }}/location/target/site/jacoco/jacoco.xml
+          token: ${{ secrets.GITHUB_TOKEN }}
+          min-coverage-overall: 70
+          title: "location Coverage Report"
+          update-comment: true
+
+      - name: Upload Coverage Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: location-jacoco-report
+          path: location/target/site/jacoco
+
+      - name: VerifyCoverage
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import sys,xml.etree.ElementTree as ET
+          p='location/target/site/jacoco/jacoco.xml'
+          try:
+            root=ET.parse(p).getroot()
+          except Exception:
+            print('ERROR: cannot read',p); sys.exit(1)
+          c=root.find("./counter[@type='LINE']")
+          if c is None:
+            print('ERROR: LINE counter missing'); sys.exit(1)
+          missed=int(c.get('missed','0')); covered=int(c.get('covered','0'))
+          pct=covered/(missed+covered)*100 if (missed+covered)>0 else 0.0
+          print(f'Overall LINE coverage: {pct:.2f}%')
+          if pct < 70.0:
+            print(f'ERROR: coverage {pct:.2f}% < 70.00%'); sys.exit(1)
+          PY
+
+      # Scan for HIGH+ CVEs in the dependency tree.
+      # Uses location/pom.xml to resolve the correct dependency tree in this monorepo.
+      # continue-on-error: results are advisory, not blocking.
+      # - name: Install Snyk CLI
+      #   run: npm install -g snyk
+
+      # - name: Snyk Test & Monitor
+      #   continue-on-error: true
+      #   env:
+      #     SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      #   run: |
+      #     find . -name "mvnw" -exec chmod +x {} \;
+
+      #     mkdir -p .mvn
+      #     echo "-Drevision=1.0-SNAPSHOT" > .mvn/maven.config
+      #     mvn install -pl common-library -am -DskipTests -q
+
+      #     find ~/.m2/repository/com/yas -name "*.pom" \
+      #       -exec sed -i 's/\${revision}/1.0-SNAPSHOT/g' {} \;
+
+      #     snyk auth $SNYK_TOKEN
+
+      #     snyk test --file=location/pom.xml \
+      #       --project-name=yas-location \
+      #       --severity-threshold=high \
+      #       --json-file-output=snyk-report.json \
+      #       --debug || true
+
+      #     snyk monitor --file=location/pom.xml \
+      #       --org=136ead40-5311-48b6-a6ba-cf93c14ee4fd \
+      #       --project-name=yas-location-service \
+      #       --target-name=akiratomori/yas
+
+      #     if [ -f snyk-report.json ]; then
+      #       echo "snyk-report.json created successfully"
+      #       npx snyk-to-html -i snyk-report.json -o snyk-report.html
+      #     else
+      #       echo "snyk-report.json NOT FOUND - Snyk crashed during dependency resolution!"
+      #       exit 1
+      #     fi
+
+      - name: Upload Snyk Report (HTML)
+        uses: actions/upload-artifact@v4
+        if: always() && hashFiles('snyk-report.html') != ''
+        with:
+          name: location-snyk-report-html
+          path: snyk-report.html
+
+      # Reuse compiled classes and test reports from the verify step above.
+      # Avoids re-running compile+test by using sonar:sonar with -DskipTests.
+      - name: SonarCloud Scan
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
-          mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
-          -pl location -am \
-          -Dsonar.organization=akiratomori-2 \
-          -Dsonar.projectKey=AkiraTomori_DevOps-YAS
+          mvn -B sonar:sonar \
+            -pl location \
+            -am \
+            -DskipTests \
+            -Dsonar.organization=akiratomori-2 \
+            -Dsonar.projectKey=AkiraTomori_DevOps-YAS \
+            -Dsonar.token=${SONAR_TOKEN} \
+            -Dsonar.coverage.jacoco.xmlReportPaths=${GITHUB_WORKSPACE}/location/target/site/jacoco/jacoco.xml \
+            -Dsonar.junit.reportPaths=${GITHUB_WORKSPACE}/location/target/surefire-reports
 
-      # 6. Kiểm tra độ phủ Unit Test > 70%
-      - name: Check Coverage Report
-        uses: madrapps/jacoco-report@v1.6.1
-        with:
-          paths: ${{github.workspace}}/location/target/site/jacoco/jacoco.xml
-          token: ${{secrets.GITHUB_TOKEN}}
-          min-coverage-overall: 70 
-          title: 'Location Service Coverage Report'
-          update-comment: true
-          continue-on-error: false
-        continue-on-error: false
-
-      # Upload báo cáo coverage để tham chiếu sau (Yêu cầu 7b)
-      - name: Archive Location Coverage Report
-        uses: actions/upload-artifact@v4
-        with:
-          name: location-service-coverage-report
-          path: location/target/site/jacoco/
-
-      # 7. Upload kết quả Test (Yêu cầu 5)
-      - name: Unit Test Results
-        uses: dorny/test-reporter@v1
-        if: ${{ always() }}
-        with:
-          name: Location-Service-Unit-Test-Results
-          path: "location/target/surefire-reports/*.xml"
-          reporter: java-junit
-
-  # PHASE 2: BUILD & PUSH DOCKER (Chỉ chạy khi PR vào main và Phase Test thành công)
-  Build:
-    needs: Test
+  # ─────────────────────────────────────────────
+  # PHASE 2 – BUILD
+  # Runs on every push (all branches) after test passes.
+  # Builds service artifact and branch-specific Docker image.
+  # Image tag uses the latest commit SHA from that branch.
+  # ─────────────────────────────────────────────
+  build:
+    name: Build
     runs-on: ubuntu-latest
+    needs: test # Runs only if test job passes
+    if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Setup Environment
-        uses: ./.github/workflows/actions
+      - uses: ./.github/workflows/actions
 
-      - name: Build Package
-        run: mvn clean package -pl location -am -DskipTests -DskipITs -Dcheckstyle.skip
-
-      - name: Log in to GHCR
-        if: github.ref == 'refs/heads/main'
+      # Build full dependency chain and package location; skip tests (already run in test phase).
+      # Maven cache from the test phase speeds this up significantly.
+      - name: Run Maven Build
+        run: mvn -B clean install -pl location -am -DskipTests
+      
+      # Log in to Docker Hub using secrets for secure authentication
+      - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push Docker image
-        if: github.ref == 'refs/heads/main'
+      # Build and push Docker image for the location service; tag with latest commit SHA for traceability
+      - name: Build and Push Docker Image
         uses: docker/build-push-action@v6
         with:
           context: ./location
           push: true
-          tags: ghcr.io/akiratomori/devops-yas-ga/yas-location:latest
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/yas-location:${{ github.sha }}
+            ${{ github.ref == 'refs/heads/main' && format('{0}/yas-location:latest', secrets.DOCKERHUB_USERNAME) || '' }}
+
+      # Scan CVEs in the full dependency tree after build
+      - name: OWASP Dependency Check
+        uses: dependency-check/Dependency-Check_Action@main
+        env:
+          JAVA_HOME: /opt/jdk
+        with:
+          project: "yas"
+          path: "."
+          format: "HTML"
+
+      - name: Upload OWASP Dependency Check Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: OWASP Dependency Check Report
+          path: ${{ github.workspace }}/reports
