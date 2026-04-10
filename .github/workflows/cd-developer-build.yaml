@@ -67,26 +67,32 @@ jobs:
           fetch-depth: 0
 
       - name: Configure kubeconfig
+        shell: powershell
+        env:
+          # Ép kiểu dữ liệu thô từ Secret vào biến môi trường
+          KUBE_RAW: ${{ secrets.KUBE_CONFIG }}
         run: |
           $kubeDir = "$env:USERPROFILE\.kube"
           if (!(Test-Path $kubeDir)) { New-Item -ItemType Directory -Path $kubeDir | Out-Null }
           $targetFile = "$kubeDir\config"
 
-          # Sử dụng thẻ 'HEREDOC' của GitHub để lấy nguyên bản Secret không qua biến môi trường PowerShell
-          $rawConfig = @"
-          ${{ secrets.KUBE_CONFIG }}
-          "@.Trim()
+          # Lấy dữ liệu trực tiếp từ biến môi trường của Job
+          $data = $env:KUBE_RAW.Trim()
 
-          if ($rawConfig -match "apiVersion:") {
-              [System.IO.File]::WriteAllText($targetFile, $rawConfig)
+          if ($data -match "apiVersion:") {
+              # Nếu là YAML, ghi đè bằng phương thức System.IO để giữ nguyên định dạng
+              [System.IO.File]::WriteAllText($targetFile, $data, [System.Text.Encoding]::UTF8)
+              Write-Host "Saved as Plain-text YAML."
           } else {
-              # Nếu là Base64, loại bỏ mọi ký tự lạ (space, newline) có thể phát sinh do Admin Shell
-              $cleanBase64 = $rawConfig -replace '\s',''
+              # Nếu là Base64, dọn dẹp sạch sẽ ký tự lạ
+              $cleanBase64 = $data -replace '\s',''
               $bytes = [System.Convert]::FromBase64String($cleanBase64)
               [System.IO.File]::WriteAllBytes($targetFile, $bytes)
+              Write-Host "Decoded from Base64."
           }
 
-          Write-Host "Kubeconfig has been refreshed safely."
+          # Thử đọc 1 dòng đầu để kiểm tra định dạng
+          Get-Content $targetFile -TotalCount 1
           kubectl get nodes
 
       - name: Resolve image tags from branch inputs
