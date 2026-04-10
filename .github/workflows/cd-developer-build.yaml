@@ -70,22 +70,23 @@ jobs:
         run: |
           $kubeDir = "$env:USERPROFILE\.kube"
           if (!(Test-Path $kubeDir)) { New-Item -ItemType Directory -Path $kubeDir | Out-Null }
-          
           $targetFile = "$kubeDir\config"
-          # Loại bỏ khoảng trắng thừa ở đầu/cuối chuỗi Secret
-          $configData = $env:KUBE_CONFIG.Trim()
-          
-          if ($configData -match "apiVersion:") {
-              # Ghi file theo định dạng UTF8 không có BOM (chuẩn cho YAML)
-              [System.IO.File]::WriteAllText($targetFile, $configData)
+
+          # Sử dụng thẻ 'HEREDOC' của GitHub để lấy nguyên bản Secret không qua biến môi trường PowerShell
+          $rawConfig = @"
+          ${{ secrets.KUBE_CONFIG }}
+          "@.Trim()
+
+          if ($rawConfig -match "apiVersion:") {
+              [System.IO.File]::WriteAllText($targetFile, $rawConfig)
           } else {
-              # Giải mã Base64 và ghi trực tiếp dạng Binary
-              $bytes = [System.Convert]::FromBase64String($configData)
+              # Nếu là Base64, loại bỏ mọi ký tự lạ (space, newline) có thể phát sinh do Admin Shell
+              $cleanBase64 = $rawConfig -replace '\s',''
+              $bytes = [System.Convert]::FromBase64String($cleanBase64)
               [System.IO.File]::WriteAllBytes($targetFile, $bytes)
           }
-          
-          # Kiểm tra lại nội dung file (chỉ để debug, có thể xóa sau)
-          Write-Host "Kubeconfig created at: $targetFile"
+
+          Write-Host "Kubeconfig has been refreshed safely."
           kubectl get nodes
 
       - name: Resolve image tags from branch inputs
