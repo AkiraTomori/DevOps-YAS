@@ -48,7 +48,6 @@ jobs:
   developer-build:
     name: Developer Build And Deploy
     runs-on: self-hosted
-    # Thiết lập shell mặc định là powershell cho toàn bộ các bước bên dưới
     defaults:
       run:
         shell: powershell 
@@ -56,9 +55,8 @@ jobs:
       contents: read
     env:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      NAMESPACE: yas
+      NAMESPACE: dev  
       DEFAULT_TAG: latest 
-      KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
 
     steps:
       - name: Checkout
@@ -66,37 +64,38 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Configure kubeconfig
-        shell: powershell
+      - name: Configure Isolated Kubeconfig
         env:
           KUBE_RAW: ${{ secrets.KUBE_CONFIG }}
         run: |
-          # 1. Tạo file config tạm ngay tại thư mục Workspace của Job
+          # Tạo file config tạm ngay trong thư mục workspace để cô lập
           $localConfig = Join-Path $pwd "runner-kubeconfig"
           $data = $env:KUBE_RAW.Trim()
 
           if ($data -match "apiVersion:") {
+              # Nếu là YAML text, ghi đè bằng UTF8 không BOM
               [System.IO.File]::WriteAllText($localConfig, $data, [System.Text.Encoding]::UTF8)
           } else {
+              # Nếu là Base64, dọn dẹp sạch sẽ và giải mã
               $cleanBase64 = $data -replace '\s',''
               $bytes = [System.Convert]::FromBase64String($cleanBase64)
               [System.IO.File]::WriteAllBytes($localConfig, $bytes)
           }
 
-          # 2. THIẾT LẬP QUAN TRỌNG: Ép các bước sau dùng file này
+          # Ép các bước sau sử dụng file config tạm này thay vì file hệ thống
           echo "KUBECONFIG=$localConfig" >> $env:GITHUB_ENV
-          
           Write-Host "Kubeconfig is isolated at: $localConfig"
-          # Đợi 1 giây để biến môi trường được cập nhật
+          
+          # Đợi 1 giây để biến môi trường cập nhật và kiểm tra node
           Start-Sleep -s 1
           kubectl get nodes
-        
+
       - name: Resolve image tags from branch inputs
         id: resolve
         run: |
-          # Chuyển logic shell sang PowerShell để tương thích 100% với Windows Runner
           function Resolve-Tag($branch) {
               if ($branch -eq "main" -or $branch -eq "latest") { return $env:DEFAULT_TAG }
+              # Lấy SHA commit mới nhất của branch từ remote
               $sha = (git ls-remote origin "refs/heads/$branch" | ForEach-Object { $_.Split("`t")[0] })
               if (-not $sha) { 
                   Write-Error "Cannot resolve branch '$branch'"
@@ -121,18 +120,21 @@ jobs:
           function Deploy-Service($service, $tag) {
               $chartPath = "k8s/charts/$service"
               if (Test-Path $chartPath) {
-                  Write-Host "Deploying $service with tag $tag..."
+                  Write-Host "--- Deploying $service with tag $tag ---"
                   helm dependency build $chartPath
+                  
+                  # helm upgrade với các tham số tag và tắt Monitoring để tránh lỗi ServiceMonitor
                   helm upgrade --install $service $chartPath `
                     --namespace $env:NAMESPACE `
                     --create-namespace `
                     --set "backend.image.repository=$($env:DOCKERHUB_USERNAME)/yas-$service" `
                     --set "backend.image.tag=$tag" `
-                    --set "backend.service.type=NodePort"
+                    --set "backend.service.type=NodePort" `
+                    --set "common.monitoring.enabled=false"
 
-                  kubectl rollout status deployment/$service -n $env:NAMESPACE --timeout=180s
+                  kubectl rollout status deployment/$service -n $env:NAMESPACE --timeout=120s
               } else {
-                  Write-Warning "Chart for $service not found."
+                  Write-Warning "Chart for $service not found at $chartPath"
               }
           }
 
@@ -148,21 +150,24 @@ jobs:
           Deploy-Service "tax" "${{ steps.resolve.outputs.tax_tag }}"
 
       - name: Publish deploy summary
+        if: always()
         run: |
           $NODE_IP = (kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
           if (-not $NODE_IP) { $NODE_IP = "<worker-node-ip>" }
 
-          "## Developer_build summary" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          "## Developer Build Summary" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          "**Namespace**: ``$env:NAMESPACE``" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           "**Node IP**: ``$NODE_IP``" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          "🔧 **Action required**: Add hosts entry: ``$NODE_IP yas.local``" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          "### NodePort endpoints" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          "**Action**: Add hosts entry: ``$NODE_IP yas.local``" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          "---" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          "### NodePort Endpoints" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
 
           $services = "cart", "customer", "inventory", "location", "media", "order", "product", "rating", "search", "tax"
           foreach ($svc in $services) {
               $port = (kubectl get svc $svc -n $env:NAMESPACE -o jsonpath='{.spec.ports[0].nodePort}' 2>$null)
               if ($port) {
-                  "- $svc: http://yas.local:$port" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+                  "- **$svc**: http://yas.local:$port" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
               } else {
-                  "- $svc: Not found" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+                  "- **$svc**: Not found / Deploy failed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
               }
           }
