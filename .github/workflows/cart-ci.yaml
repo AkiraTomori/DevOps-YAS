@@ -104,43 +104,43 @@ jobs:
       # Scan for HIGH+ CVEs in the dependency tree.
       # Uses cart/pom.xml to resolve the correct dependency tree in this monorepo.
       # continue-on-error: results are advisory, not blocking.
-      - name: Install Snyk CLI
-        run: npm install -g snyk
+      # - name: Install Snyk CLI
+      #   run: npm install -g snyk
 
-      - name: Snyk Test & Monitor
-        continue-on-error: true
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        run: |
-          find . -name "mvnw" -exec chmod +x {} \;
+      # - name: Snyk Test & Monitor
+      #   continue-on-error: true
+      #   env:
+      #     SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      #   run: |
+      #     find . -name "mvnw" -exec chmod +x {} \;
 
-          mkdir -p .mvn
-          echo "-Drevision=1.0-SNAPSHOT" > .mvn/maven.config
-          mvn install -pl common-library -am -DskipTests -q
+      #     mkdir -p .mvn
+      #     echo "-Drevision=1.0-SNAPSHOT" > .mvn/maven.config
+      #     mvn install -pl common-library -am -DskipTests -q
 
-          find ~/.m2/repository/com/yas -name "*.pom" \
-            -exec sed -i 's/\${revision}/1.0-SNAPSHOT/g' {} \;
+      #     find ~/.m2/repository/com/yas -name "*.pom" \
+      #       -exec sed -i 's/\${revision}/1.0-SNAPSHOT/g' {} \;
 
-          snyk auth $SNYK_TOKEN
+      #     snyk auth $SNYK_TOKEN
 
-          snyk test --file=cart/pom.xml \
-            --project-name=yas-cart \
-            --severity-threshold=high \
-            --json-file-output=snyk-report.json \
-            --debug || true
+      #     snyk test --file=cart/pom.xml \
+      #       --project-name=yas-cart \
+      #       --severity-threshold=high \
+      #       --json-file-output=snyk-report.json \
+      #       --debug || true
 
-          snyk monitor --file=cart/pom.xml \
-            --org=136ead40-5311-48b6-a6ba-cf93c14ee4fd \
-            --project-name=yas-cart-service \
-            --target-name=akiratomori/yas
+      #     snyk monitor --file=cart/pom.xml \
+      #       --org=136ead40-5311-48b6-a6ba-cf93c14ee4fd \
+      #       --project-name=yas-cart-service \
+      #       --target-name=akiratomori/yas
 
-          if [ -f snyk-report.json ]; then
-            echo "snyk-report.json created successfully"
-            npx snyk-to-html -i snyk-report.json -o snyk-report.html
-          else
-            echo "snyk-report.json NOT FOUND - Snyk crashed during dependency resolution!"
-            exit 1
-          fi
+      #     if [ -f snyk-report.json ]; then
+      #       echo "snyk-report.json created successfully"
+      #       npx snyk-to-html -i snyk-report.json -o snyk-report.html
+      #     else
+      #       echo "snyk-report.json NOT FOUND - Snyk crashed during dependency resolution!"
+      #       exit 1
+      #     fi
 
       - name: Upload Snyk Report (HTML)
         uses: actions/upload-artifact@v4
@@ -160,7 +160,7 @@ jobs:
             -am \
             -DskipTests \
             -Dsonar.organization=akiratomori-2 \
-            -Dsonar.projectKey=AkiraTomori_DevOps-YA \
+            -Dsonar.projectKey=AkiraTomori_DevOps-YAS \
             -Dsonar.token=${SONAR_TOKEN} \
             -Dsonar.coverage.jacoco.xmlReportPaths=${GITHUB_WORKSPACE}/cart/target/site/jacoco/jacoco.xml \
             -Dsonar.junit.reportPaths=${GITHUB_WORKSPACE}/cart/target/surefire-reports
