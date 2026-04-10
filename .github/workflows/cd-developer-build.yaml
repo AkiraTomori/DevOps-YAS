@@ -69,7 +69,7 @@ jobs:
       #   uses: azure/setup-kubectl@v4
 
       - name: Configure kubeconfig
-        shell: pwsh 
+        shell: powershell 
         run: |
           $kubeDir = "$env:USERPROFILE\.kube"
           if (!(Test-Path $kubeDir)) { New-Item -ItemType Directory -Path $kubeDir }
