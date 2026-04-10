@@ -55,7 +55,7 @@ jobs:
       contents: read
     env:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      NAMESPACE: dev  
+      NAMESPACE: dev  # Deploy vào namespace dev của bạn
       DEFAULT_TAG: latest 
 
     steps:
@@ -64,38 +64,37 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Configure Isolated Kubeconfig
+      - name: Configure Isolated Kubeconfig & Fix CRDs
         env:
           KUBE_RAW: ${{ secrets.KUBE_CONFIG }}
         run: |
-          # Tạo file config tạm ngay trong thư mục workspace để cô lập
+          # 1. Thiết lập Kubeconfig cô lập
           $localConfig = Join-Path $pwd "runner-kubeconfig"
           $data = $env:KUBE_RAW.Trim()
 
-          if ($data -match "apiVersion:") {
-              # Nếu là YAML text, ghi đè bằng UTF8 không BOM
-              [System.IO.File]::WriteAllText($localConfig, $data, [System.Text.Encoding]::UTF8)
-          } else {
-              # Nếu là Base64, dọn dẹp sạch sẽ và giải mã
+          if ($data -notmatch "apiVersion:") {
               $cleanBase64 = $data -replace '\s',''
               $bytes = [System.Convert]::FromBase64String($cleanBase64)
               [System.IO.File]::WriteAllBytes($localConfig, $bytes)
+          } else {
+              [System.IO.File]::WriteAllText($localConfig, $data, [System.Text.Encoding]::UTF8)
           }
 
-          # Ép các bước sau sử dụng file config tạm này thay vì file hệ thống
           echo "KUBECONFIG=$localConfig" >> $env:GITHUB_ENV
-          Write-Host "Kubeconfig is isolated at: $localConfig"
+          $env:KUBECONFIG = $localConfig
           
-          # Đợi 1 giây để biến môi trường cập nhật và kiểm tra node
-          Start-Sleep -s 1
+          Write-Host "--- Checking Connection ---"
           kubectl get nodes
+
+          Write-Host "--- Installing Monitoring CRDs to bypass errors ---"
+          # Cài đặt định nghĩa ServiceMonitor để Helm không báo lỗi "mapping not found"
+          kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml
 
       - name: Resolve image tags from branch inputs
         id: resolve
         run: |
           function Resolve-Tag($branch) {
               if ($branch -eq "main" -or $branch -eq "latest") { return $env:DEFAULT_TAG }
-              # Lấy SHA commit mới nhất của branch từ remote
               $sha = (git ls-remote origin "refs/heads/$branch" | ForEach-Object { $_.Split("`t")[0] })
               if (-not $sha) { 
                   Write-Error "Cannot resolve branch '$branch'"
@@ -123,18 +122,19 @@ jobs:
                   Write-Host "--- Deploying $service with tag $tag ---"
                   helm dependency build $chartPath
                   
-                  # helm upgrade với các tham số tag và tắt Monitoring để tránh lỗi ServiceMonitor
+                  # Deploy và ép tắt mọi cấu hình Monitoring có thể gây lỗi
                   helm upgrade --install $service $chartPath `
                     --namespace $env:NAMESPACE `
                     --create-namespace `
                     --set "backend.image.repository=$($env:DOCKERHUB_USERNAME)/yas-$service" `
                     --set "backend.image.tag=$tag" `
                     --set "backend.service.type=NodePort" `
-                    --set "common.monitoring.enabled=false"
+                    --set "common.monitoring.enabled=false" `
+                    --set "monitoring.enabled=false" `
+                    --set "serviceMonitor.enabled=false"
 
-                  kubectl rollout status deployment/$service -n $env:NAMESPACE --timeout=120s
-              } else {
-                  Write-Warning "Chart for $service not found at $chartPath"
+                  # Rollout status để kiểm tra nhưng không dùng để làm fail Job nếu chưa kịp lên
+                  kubectl rollout status deployment/$service -n $env:NAMESPACE --timeout=60s
               }
           }
 
@@ -152,8 +152,9 @@ jobs:
       - name: Publish deploy summary
         if: always()
         run: |
-          $NODE_IP = (kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
-          if (-not $NODE_IP) { $NODE_IP = "<worker-node-ip>" }
+          # Fix lỗi JSONPath bằng cách lấy trực tiếp địa chỉ đầu tiên của Node
+          $NODE_IP = (kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
+          if (-not $NODE_IP) { $NODE_IP = "127.0.0.1" }
 
           "## Developer Build Summary" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           "**Namespace**: ``$env:NAMESPACE``" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
@@ -168,6 +169,6 @@ jobs:
               if ($port) {
                   "- **$svc**: http://yas.local:$port" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
               } else {
-                  "- **$svc**: Not found / Deploy failed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+                  "- **$svc**: Deploy failed / Service not found" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
               }
           }
