@@ -132,7 +132,11 @@ jobs:
             "media-application-configmap",
             "order-application-configmap",
             "product-application-configmap",
-            "search-application-configmap"
+            "search-application-configmap",
+            "tax-application-configmap",
+            "inventory-application-configmap",
+            "location-application-configmap",
+            "rating-application-configmap"
           )
 
           foreach ($cm in $requiredConfigMaps) {
