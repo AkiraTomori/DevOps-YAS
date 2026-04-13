@@ -55,7 +55,7 @@ jobs:
       contents: read
     env:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      NAMESPACE: dev  # Deploy vào namespace dev của bạn
+      NAMESPACE: yas 
       DEFAULT_TAG: latest 
 
     steps:
@@ -132,11 +132,7 @@ jobs:
             "media-application-configmap",
             "order-application-configmap",
             "product-application-configmap",
-            "search-application-configmap",
-            "tax-application-configmap",
-            "inventory-application-configmap",
-            "location-application-configmap",
-            "rating-application-configmap"
+            "search-application-configmap"
           )
 
           foreach ($cm in $requiredConfigMaps) {
