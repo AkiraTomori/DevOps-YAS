@@ -47,16 +47,13 @@ on:
 jobs:
   developer-build:
     name: Developer Build And Deploy
-    runs-on: self-hosted
-    defaults:
-      run:
-        shell: powershell 
+    runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write # Cần thiết để authenticate với GCP
     env:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      NAMESPACE: yas 
-      DEFAULT_TAG: latest 
+      NAMESPACE: yas
+      DEFAULT_TAG: latest
 
     steps:
       - name: Checkout
@@ -64,139 +61,100 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Configure Isolated Kubeconfig & Fix CRDs
-        env:
-          KUBE_RAW: ${{ secrets.KUBE_CONFIG }}
-        run: |
-          # 1. Thiết lập Kubeconfig cô lập
-          $localConfig = Join-Path $pwd "runner-kubeconfig"
-          $data = $env:KUBE_RAW.Trim()
+      # 1. Xác thực với GCP bằng Service Account Key
+      - id: 'auth'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          credentials_json: '${{ secrets.GCP_SA_KEY }}'
 
-          if ($data -notmatch "apiVersion:") {
-              $cleanBase64 = $data -replace '\s',''
-              $bytes = [System.Convert]::FromBase64String($cleanBase64)
-              [System.IO.File]::WriteAllBytes($localConfig, $bytes)
-          } else {
-              [System.IO.File]::WriteAllText($localConfig, $data, [System.Text.Encoding]::UTF8)
-          }
+      # 2. Thiết lập cấu hình GKE (Thay thế bước cấu hình Kubeconfig thủ công)
+      - name: 'Set up GKE credentials'
+        uses: 'google-github-actions/get-gke-credentials@v2'
+        with:
+          cluster_name: 'yas-heavy-cluster'
+          location: 'asia-southeast1-a'
 
-          echo "KUBECONFIG=$localConfig" >> $env:GITHUB_ENV
-          $env:KUBECONFIG = $localConfig
-          
-          Write-Host "--- Checking Connection ---"
-          kubectl get nodes
-
-          Write-Host "--- Installing Monitoring CRDs to bypass errors ---"
-          # Cài đặt định nghĩa ServiceMonitor để Helm không báo lỗi "mapping not found"
-          kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml
-
-      - name: Resolve image tags from branch inputs
+      # 3. Resolve image tags (Chuyển sang Bash)
+      - name: Resolve image tags
         id: resolve
         run: |
-          function Resolve-Tag($branch) {
-              if ($branch -eq "main" -or $branch -eq "latest") { return $env:DEFAULT_TAG }
-              $sha = (git ls-remote origin "refs/heads/$branch" | ForEach-Object { $_.Split("`t")[0] })
-              if (-not $sha) { 
-                  Write-Error "Cannot resolve branch '$branch'"
-                  exit 1 
-              }
-              return $sha
+          resolve_tag() {
+            local branch=$1
+            if [[ "$branch" == "main" || "$branch" == "latest" ]]; then
+              echo "$DEFAULT_TAG"
+            else
+              # Lấy SHA ngắn gọn của branch từ remote
+              local sha=$(git ls-remote origin "refs/heads/$branch" | cut -f1)
+              if [ -z "$sha" ]; then echo "Error: Branch $branch not found"; exit 1; fi
+              echo "${sha:0:7}"
+            fi
           }
+          
+          echo "cart_tag=$(resolve_tag ${{ github.event.inputs.cart_branch }})" >> $GITHUB_OUTPUT
+          echo "tax_tag=$(resolve_tag ${{ github.event.inputs.tax_branch }})" >> $GITHUB_OUTPUT
+          echo "product_tag=$(resolve_tag ${{ github.event.inputs.product_branch }})" >> $GITHUB_OUTPUT
+          echo "customer_tag=$(resolve_tag ${{ github.event.inputs.customer_branch }})" >> $GITHUB_OUTPUT
+          echo "inventory_tag=$(resolve_tag ${{ github.event.inputs.inventory_branch }})" >> $GITHUB_OUTPUT
+          echo "location_tag=$(resolve_tag ${{ github.event.inputs.location_branch }})" >> $GITHUB_OUTPUT
+          echo "media_tag=$(resolve_tag ${{ github.event.inputs.media_branch }})" >> $GITHUB_OUTPUT
+          echo "order_tag=$(resolve_tag ${{ github.event.inputs.order_branch }})" >> $GITHUB_OUTPUT
+          echo "rating_tag=$(resolve_tag ${{ github.event.inputs.rating_branch }})" >> $GITHUB_OUTPUT
+          echo "search_tag=$(resolve_tag ${{ github.event.inputs.search_branch }})" >> $GITHUB_OUTPUT
 
-          echo "cart_tag=$(Resolve-Tag '${{ inputs.cart_branch }}')" >> $env:GITHUB_OUTPUT
-          echo "customer_tag=$(Resolve-Tag '${{ inputs.customer_branch }}')" >> $env:GITHUB_OUTPUT
-          echo "inventory_tag=$(Resolve-Tag '${{ inputs.inventory_branch }}')" >> $env:GITHUB_OUTPUT
-          echo "location_tag=$(Resolve-Tag '${{ inputs.location_branch }}')" >> $env:GITHUB_OUTPUT
-          echo "media_tag=$(Resolve-Tag '${{ inputs.media_branch }}')" >> $env:GITHUB_OUTPUT
-          echo "order_tag=$(Resolve-Tag '${{ inputs.order_branch }}')" >> $env:GITHUB_OUTPUT
-          echo "product_tag=$(Resolve-Tag '${{ inputs.product_branch }}')" >> $env:GITHUB_OUTPUT
-          echo "rating_tag=$(Resolve-Tag '${{ inputs.rating_branch }}')" >> $env:GITHUB_OUTPUT
-          echo "search_tag=$(Resolve-Tag '${{ inputs.search_branch }}')" >> $env:GITHUB_OUTPUT
-          echo "tax_tag=$(Resolve-Tag '${{ inputs.tax_branch }}')" >> $env:GITHUB_OUTPUT
-
-      - name: Deploy shared configuration (required ConfigMaps/Secrets)
+      # 4. Deploy yas-configuration
+      - name: Deploy shared configuration
         run: |
-          $configChart = "k8s/charts/yas-configuration"
-          Write-Host "--- Deploying yas-configuration chart to namespace $env:NAMESPACE ---"
-          helm dependency build $configChart
-          helm upgrade --install yas-configuration $configChart `
-            --namespace $env:NAMESPACE `
-            --create-namespace
+          helm dependency build k8s/charts/yas-configuration
+          helm upgrade --install yas-configuration k8s/charts/yas-configuration \
+            --namespace $NAMESPACE --create-namespace
 
-      - name: Verify required shared resources
-        run: |
-          $requiredConfigMaps = @(
-            "yas-configuration-configmap",
-            "cart-application-configmap",
-            "customer-application-configmap",
-            "media-application-configmap",
-            "order-application-configmap",
-            "product-application-configmap",
-            "search-application-configmap"
-          )
-
-          foreach ($cm in $requiredConfigMaps) {
-            kubectl get configmap $cm -n $env:NAMESPACE | Out-Null
-          }
-
-          kubectl get secret yas-postgresql-credentials-secret -n $env:NAMESPACE | Out-Null
-          Write-Host "--- Shared resources are present in namespace $env:NAMESPACE ---"
-
+      # 5. Hàm Deploy Service
       - name: Deploy selected service images
         run: |
-          function Deploy-Service($service, $tag) {
-              $chartPath = "k8s/charts/$service"
-              if (Test-Path $chartPath) {
-                  Write-Host "--- Deploying $service with tag $tag ---"
-                  helm dependency build $chartPath
-                  
-                  # Deploy và ép tắt mọi cấu hình Monitoring có thể gây lỗi
-                  helm upgrade --install $service $chartPath `
-                    --namespace $env:NAMESPACE `
-                    --create-namespace `
-                    --set "backend.image.repository=$($env:DOCKERHUB_USERNAME)/yas-$service" `
-                    --set "backend.image.tag=$tag" `
-                    --set "backend.service.type=NodePort" `
-                    --set "common.monitoring.enabled=false" `
-                    --set "monitoring.enabled=false" `
-                    --set "serviceMonitor.enabled=false"
-
-                  # Rollout status để kiểm tra nhưng không dùng để làm fail Job nếu chưa kịp lên
-                  kubectl rollout status deployment/$service -n $env:NAMESPACE --timeout=300s
-              }
+          deploy_svc() {
+            local svc=$1
+            local tag=$2
+            echo "--- Deploying $svc with tag $tag ---"
+            helm dependency build k8s/charts/$svc
+            helm upgrade --install $svc k8s/charts/$svc \
+              --namespace $NAMESPACE \
+              --set "backend.image.tag=$tag" \
+              --set "backend.service.type=NodePort" \
+              --set "common.monitoring.enabled=false" \
+              --set "monitoring.enabled=false" \
+              --set "serviceMonitor.enabled=false"
+            
+            kubectl rollout status deployment/$svc -n $NAMESPACE --timeout=120s
           }
 
-          Deploy-Service "cart" "${{ steps.resolve.outputs.cart_tag }}"
-          Deploy-Service "customer" "${{ steps.resolve.outputs.customer_tag }}"
-          Deploy-Service "inventory" "${{ steps.resolve.outputs.inventory_tag }}"
-          Deploy-Service "location" "${{ steps.resolve.outputs.location_tag }}"
-          Deploy-Service "media" "${{ steps.resolve.outputs.media_tag }}"
-          Deploy-Service "order" "${{ steps.resolve.outputs.order_tag }}"
-          Deploy-Service "product" "${{ steps.resolve.outputs.product_tag }}"
-          Deploy-Service "rating" "${{ steps.resolve.outputs.rating_tag }}"
-          Deploy-Service "search" "${{ steps.resolve.outputs.search_tag }}"
-          Deploy-Service "tax" "${{ steps.resolve.outputs.tax_tag }}"
+          deploy_svc "cart" "${{ steps.resolve.outputs.cart_tag }}"
+          deploy_svc "tax" "${{ steps.resolve.outputs.tax_tag }}"
+          deploy_svc "product" "${{ steps.resolve.outputs.product_tag }}"
+          deploy_svc "customer" "${{ steps.resolve.outputs.customer_tag }}"
+          deploy_svc "inventory" "${{ steps.resolve.outputs.inventory_tag }}"
+          deploy_svc "location" "${{ steps.resolve.outputs.location_tag }}"
+          deploy_svc "media" "${{ steps.resolve.outputs.media_tag }}"
+          deploy_svc "order" "${{ steps.resolve.outputs.order_tag }}"
+          deploy_svc "rating" "${{ steps.resolve.outputs.rating_tag }}"
+          deploy_svc "search" "${{ steps.resolve.outputs.search_tag }}"
 
+      # 6. Publish Summary (Định dạng Markdown chuẩn)
       - name: Publish deploy summary
         if: always()
         run: |
-          # Fix lỗi JSONPath bằng cách lấy trực tiếp địa chỉ đầu tiên của Node
-          $NODE_IP = (kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
-          if (-not $NODE_IP) { $NODE_IP = "127.0.0.1" }
-
-          "## Developer Build Summary" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          "**Namespace**: ``$env:NAMESPACE``" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          "**Node IP**: ``$NODE_IP``" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          "**Action**: Add hosts entry: ``$NODE_IP yas.local``" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          "---" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          "### NodePort Endpoints" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-
-          $services = "cart", "customer", "inventory", "location", "media", "order", "product", "rating", "search", "tax"
-          foreach ($svc in $services) {
-              $port = (kubectl get svc $svc -n $env:NAMESPACE -o jsonpath='{.spec.ports[0].nodePort}' 2>$null)
-              if ($port) {
-                  "- **$svc**: http://yas.local:$port" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-              } else {
-                  "- **$svc**: Deploy failed / Service not found" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-              }
-          }
+          NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="ExternalIP")].address}')
+          
+          echo "## Developer Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Namespace**: \`$NAMESPACE\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Node IP**: \`$NODE_IP\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Action**: Add to hosts: \`$NODE_IP api.yas.local.com\`" >> $GITHUB_STEP_SUMMARY
+          echo "### NodePort Endpoints" >> $GITHUB_STEP_SUMMARY
+          
+          for svc in cart tax product customer inventory location media order rating search; do
+            PORT=$(kubectl get svc $svc -n $NAMESPACE -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null || echo "")
+            if [ ! -z "$PORT" ]; then
+              echo "- **$svc**: [http://api.yas.local.com:$PORT](http://api.yas.local.com:$PORT)" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- **$svc**: Deploy failed" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
