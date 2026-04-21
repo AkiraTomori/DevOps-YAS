@@ -173,7 +173,7 @@ pipeline {
         }
 
         stage('CD Staging GitOps Update') {
-            when { tag "v*" }
+            when { expression { return env.IS_RELEASE.toBoolean() }  }
             steps {
                 script {
                     echo ">>> Bắt đầu quy trình Retagging cho STAGING..."
