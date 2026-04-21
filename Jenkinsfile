@@ -73,7 +73,10 @@ pipeline {
     environment {
         DOCKERHUB_USER        = 'akiratomori'
         DOCKER_CREDENTIALS_ID = 'dockerhub-creds'
-        ALL_SERVICES          = 'cart,customer,inventory,location,media,order,product,rating,search,tax'
+        ALL_SERVICES          = 'cart,customer,inventory,location,media,
+                                order,product,rating,search,tax,recommendation,
+                                payment,payment-paypal,sampledata,webhook,promotion,
+                                backoffice-bff,storefront-bff'
 
         GITOPS_REPO_URL             = "https://github.com/AkiraTomori/ArgoCD-Advanced.git"
         GITOPS_TOKEN_CREDENTIALS_ID = 'gitops-token'
