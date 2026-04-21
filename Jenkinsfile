@@ -168,6 +168,7 @@ pipeline {
                     // 2. Cập nhật GitOps cho Dev bằng mã hash để ép ArgoCD tự động Sync
                     echo ">>> Đang cập nhật môi trường DEV ArgoCD với tag: ${env.IMAGE_TAG}"
                     updateGitOpsRepo('dev', env.IMAGE_TAG)
+                    
                 }
             }
         }
