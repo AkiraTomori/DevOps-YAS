@@ -63,7 +63,7 @@ def retagAndPushBackendImage(String service, String sourceTag, String targetTag,
 }
 
 pipeline {
-    agent { label 'build' }
+    agent any
 
     options {
         timestamps()
