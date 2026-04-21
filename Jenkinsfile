@@ -168,12 +168,13 @@ pipeline {
                     // 2. Cập nhật GitOps cho Dev bằng mã hash để ép ArgoCD tự động Sync
                     echo ">>> Đang cập nhật môi trường DEV ArgoCD với tag: ${env.IMAGE_TAG}"
                     updateGitOpsRepo('dev', env.IMAGE_TAG)
+                    
                 }
             }
         }
 
         stage('CD Staging GitOps Update') {
-            when { tag "v*" }
+            when { expression { return env.IS_RELEASE.toBoolean() }  }
             steps {
                 script {
                     echo ">>> Bắt đầu quy trình Retagging cho STAGING..."
