@@ -10,6 +10,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 @EnableConfigurationProperties({YasConfig.class, CorsConfig.class})
 public class MediaApplication {
     // Hello World
+    // Hello World
     public static void main(String[] args) {
         SpringApplication.run(MediaApplication.class, args);
     }
