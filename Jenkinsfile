@@ -165,8 +165,8 @@ pipeline {
             steps {
                 script {
                     // Retag sang 'main' cho tất cả
-                    VALID_BACKEND_SERVICES.each { retagAndPushImage("yas-${it}", env.IMAGE_TAG, 'main') }
-                    VALID_FRONTEND_SERVICES.each { k, v -> retagAndPushImage(v.image, env.IMAGE_TAG, 'main') }
+                    VALID_BACKEND_SERVICES.each { retagAndPushImage("yas-${it}", env.IMAGE_TAG, 'latest') }
+                    VALID_FRONTEND_SERVICES.each { k, v -> retagAndPushImage(v.image, env.IMAGE_TAG, 'latest') }
 
                     updateGitOpsRepo('dev', env.IMAGE_TAG, VALID_BACKEND_SERVICES, VALID_FRONTEND_SERVICES.keySet() as List)
                 }
@@ -178,8 +178,8 @@ pipeline {
             steps {
                 script {
                     // Lấy từ main retag sang tag version
-                    VALID_BACKEND_SERVICES.each { retagAndPushImage("yas-${it}", 'main', env.IMAGE_TAG) }
-                    VALID_FRONTEND_SERVICES.each { k, v -> retagAndPushImage(v.image, 'main', env.IMAGE_TAG) }
+                    VALID_BACKEND_SERVICES.each { retagAndPushImage("yas-${it}", 'latest', env.IMAGE_TAG) }
+                    VALID_FRONTEND_SERVICES.each { k, v -> retagAndPushImage(v.image, 'latest', env.IMAGE_TAG) }
 
                     updateGitOpsRepo('staging', env.IMAGE_TAG, VALID_BACKEND_SERVICES, VALID_FRONTEND_SERVICES.keySet() as List)
                 }
