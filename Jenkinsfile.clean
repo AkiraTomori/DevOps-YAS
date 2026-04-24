@@ -46,7 +46,7 @@ pipeline {
 			steps {
 				script {
 					def exists = sh(
-						script: "kubectl get namespace ${env.NAMESPACE_TO_DELETE} --no-headers >/dev/null 2>&1; echo $?",
+						script: "kubectl get namespace ${env.NAMESPACE_TO_DELETE} --no-headers >/dev/null 2>&1; echo \$?",
 						returnStdout: true
 					).trim() == '0'
 

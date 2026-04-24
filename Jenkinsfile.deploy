@@ -261,16 +261,19 @@ pipeline {
 		}
 
 		stage('Clone ArgoCD Charts Repository') {
-			steps {
-				withCredentials([string(credentialsId: env.GITOPS_TOKEN_CREDENTIALS_ID, variable: 'GITOPS_TOKEN')]) {
-					sh """
-						rm -rf ${env.GITOPS_DIR}
-						REPO_NO_PROTOCOL=$(echo '${env.GITOPS_REPO_URL}' | sed 's#https://##')
-						git clone --depth 1 https://x-access-token:${GITOPS_TOKEN}@${REPO_NO_PROTOCOL} ${env.GITOPS_DIR}
-					"""
-				}
-			}
-		}
+            steps {
+                script {
+                    def repoNoProtocol = env.GITOPS_REPO_URL.replaceFirst('https://', '')
+                    
+                    withCredentials([string(credentialsId: env.GITOPS_TOKEN_CREDENTIALS_ID, variable: 'GITOPS_TOKEN')]) {
+                        sh """
+                            rm -rf ${env.GITOPS_DIR}
+                            git clone --depth 1 https://x-access-token:${GITOPS_TOKEN}@${repoNoProtocol} ${env.GITOPS_DIR}
+                        """
+                    }
+                }
+            }
+        }
 
 		stage('Create Namespace') {
 			steps {
