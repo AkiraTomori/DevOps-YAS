@@ -164,7 +164,6 @@ pipeline {
 		string(name: 'TAG_STOREFRONT_BFF', defaultValue: 'main', description: 'Input branch name for storefront-bff (e.g., main, dev_storefront-bff_service)')
 		string(name: 'TAG_BACKOFFICE_UI', defaultValue: 'main', description: 'Input branch name for backoffice-ui (e.g., main, dev_backoffice-ui_service)')
 		string(name: 'TAG_STOREFRONT_UI', defaultValue: 'main', description: 'Input branch name for storefront-ui (e.g., main, dev_storefront-ui_service)')
-		booleanParam(name: 'INSTALL_OPERATORS', defaultValue: false, description: 'Install Postgres/Kafka/Elastic operators (cluster-level). Keep false after first bootstrap.')
 	}
 
 	environment {
@@ -289,12 +288,13 @@ pipeline {
 			steps {
 				script {
 					def sharedValuesFile = "${env.WORKSPACE}/${env.CHARTS_DIR}/${env.HELM_SHARED_VALUES_FILE}"
+					def installOperators = 'true'
 
 					dir(env.CHARTS_DIR) {
 						sh """
 							echo "[INFO] Phase 1/3 - setup-keycloak"
 							TARGET_NAMESPACE=${env.TEST_NAMESPACE} \
-							INSTALL_OPERATORS=${params.INSTALL_OPERATORS} \
+							INSTALL_OPERATORS=${installOperators} \
 							VALUES_FILE="${sharedValuesFile}" \
 							bash ${env.INFRASTRUCTURE_DIR}/scripts/setup-keycloak.sh
 
@@ -305,7 +305,7 @@ pipeline {
 
 							echo "[INFO] Phase 3/3 - setup-cluster"
 							TARGET_NAMESPACE=${env.TEST_NAMESPACE} \
-							INSTALL_OPERATORS=${params.INSTALL_OPERATORS} \
+							INSTALL_OPERATORS=${installOperators} \
 							VALUES_FILE="${sharedValuesFile}" \
 							bash ${env.INFRASTRUCTURE_DIR}/scripts/setup-cluster.sh
 						"""
