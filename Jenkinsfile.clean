@@ -1,0 +1,114 @@
+/*
+ * Jenkinsfile.clean
+ * Job name suggestion: developer_destroy
+ *
+ * Purpose:
+ * - Delete per-developer test namespace created by developer_build
+ * - Enforce safety checks so only namespaces managed by developer_build can be removed
+ */
+
+def normalizeName(String input) {
+	return (input ?: '').toLowerCase().replaceAll('[^a-z0-9-]', '-').replaceAll('-+', '-').replaceAll('^-|-$', '')
+}
+
+pipeline {
+	agent any
+	options {
+		timestamps()
+		disableConcurrentBuilds()
+	}
+
+	parameters {
+		string(name: 'TARGET_NAMESPACE', defaultValue: '', description: 'Namespace to delete, e.g. test-alice-tax')
+		booleanParam(name: 'FORCE_DELETE', defaultValue: false, description: 'If true, skip owner check but still require managed-by=developer-build label')
+	}
+
+	stages {
+		stage('Validate Input') {
+			steps {
+				script {
+					def namespace = normalizeName(params.TARGET_NAMESPACE)
+					if (!namespace) {
+						error('TARGET_NAMESPACE is required.')
+					}
+
+					if (!namespace.startsWith('test-')) {
+						error("Refusing to delete namespace '${namespace}'. Only namespaces starting with 'test-' are allowed.")
+					}
+
+					env.NAMESPACE_TO_DELETE = namespace
+					echo "Requested namespace: ${env.NAMESPACE_TO_DELETE}"
+				}
+			}
+		}
+
+		stage('Safety Checks') {
+			steps {
+				script {
+					def exists = sh(
+						script: "kubectl get namespace ${env.NAMESPACE_TO_DELETE} --no-headers >/dev/null 2>&1; echo $?",
+						returnStdout: true
+					).trim() == '0'
+
+					if (!exists) {
+						echo "Namespace '${env.NAMESPACE_TO_DELETE}' does not exist. Nothing to clean."
+						currentBuild.description = "Namespace not found: ${env.NAMESPACE_TO_DELETE}"
+						return
+					}
+
+					def managedBy = sh(
+						script: "kubectl get namespace ${env.NAMESPACE_TO_DELETE} -o jsonpath='{.metadata.labels.managed-by}' || true",
+						returnStdout: true
+					).trim()
+
+					if (managedBy != 'developer-build') {
+						error("Refusing to delete '${env.NAMESPACE_TO_DELETE}'. Label managed-by=developer-build not found.")
+					}
+
+					if (!params.FORCE_DELETE) {
+						def causes = currentBuild.getBuildCauses()
+						def rawUserId = causes.find { it.userId }?.userId ?: 'anonymous'
+						def currentUser = normalizeName(rawUserId)
+						def owner = sh(
+							script: "kubectl get namespace ${env.NAMESPACE_TO_DELETE} -o jsonpath='{.metadata.labels.owner}' || true",
+							returnStdout: true
+						).trim()
+
+						if (owner && owner != currentUser) {
+							error("Namespace owner '${owner}' does not match current user '${currentUser}'. Use FORCE_DELETE=true if approved.")
+						}
+
+						echo "Owner check passed for user: ${currentUser}"
+					} else {
+						echo 'FORCE_DELETE=true: owner check is skipped.'
+					}
+				}
+			}
+		}
+
+		stage('Delete Namespace') {
+			steps {
+				sh "kubectl delete namespace ${env.NAMESPACE_TO_DELETE} --wait=true --timeout=15m"
+			}
+		}
+	}
+
+	post {
+		success {
+			script {
+				currentBuild.displayName = "#${currentBuild.number} - ${env.NAMESPACE_TO_DELETE}"
+				currentBuild.description = "Deleted namespace: ${env.NAMESPACE_TO_DELETE}"
+				echo "Namespace deleted successfully: ${env.NAMESPACE_TO_DELETE}"
+			}
+		}
+		failure {
+			script {
+				currentBuild.displayName = "#${currentBuild.number} - ${env.NAMESPACE_TO_DELETE ?: 'unknown'}"
+				currentBuild.description = "Failed to delete namespace: ${env.NAMESPACE_TO_DELETE ?: 'unknown'}"
+			}
+		}
+		always {
+			cleanWs()
+		}
+	}
+}

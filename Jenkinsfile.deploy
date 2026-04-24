@@ -1,0 +1,399 @@
+/*
+ * Jenkinsfile.deploy
+ * Job name suggestion: developer_build
+ *
+ * Purpose:
+ * - Deploy a full per-developer test namespace (infra + YAS services)
+ * - Resolve image tag from branch input:
+ *   - main -> main
+ *   - non-main branch -> short commit SHA (8 chars) from source repo
+ * - Deploy infrastructure charts from ArgoCD-Advanced/infrastructure/base
+ * - Deploy application charts from ArgoCD-Advanced/charts
+ */
+
+def SERVICE_PARAM_MAP = [
+	cart            : 'TAG_CART',
+	tax             : 'TAG_TAX',
+	order           : 'TAG_ORDER',
+	product         : 'TAG_PRODUCT',
+	media           : 'TAG_MEDIA',
+	rating          : 'TAG_RATING',
+	customer        : 'TAG_CUSTOMER',
+	location        : 'TAG_LOCATION',
+	inventory       : 'TAG_INVENTORY',
+	search          : 'TAG_SEARCH',
+	payment         : 'TAG_PAYMENT',
+	'payment-paypal': 'TAG_PAYMENT_PAYPAL',
+	promotion       : 'TAG_PROMOTION',
+	recommendation  : 'TAG_RECOMMENDATION',
+	sampledata      : 'TAG_SAMPLEDATA',
+	webhook         : 'TAG_WEBHOOK',
+	'backoffice-bff': 'TAG_BACKOFFICE_BFF',
+	'storefront-bff': 'TAG_STOREFRONT_BFF',
+	'backoffice-ui' : 'TAG_BACKOFFICE_UI',
+	'storefront-ui' : 'TAG_STOREFRONT_UI'
+]
+
+def SERVICE_IMAGE_KEY_MAP = [
+	'backoffice-ui': 'ui',
+	'storefront-ui': 'ui'
+]
+
+def RESOLVED_BRANCH_BY_SERVICE = [:]
+def RESOLVED_TAG_BY_SERVICE = [:]
+def NON_MAIN_SERVICES = []
+def FRONTEND_ENTRY_SERVICES = ['storefront-ui', 'backoffice-ui']
+
+def normalizeName(String input) {
+	return input.toLowerCase().replaceAll('[^a-z0-9-]', '-').replaceAll('-+', '-').replaceAll('^-|-$', '')
+}
+
+def normalizeBranchInput(String rawValue) {
+	def value = (rawValue ?: 'main').trim()
+	if (!value) {
+		return 'main'
+	}
+
+	value = value.replaceFirst('^refs/heads/', '')
+	value = value.replaceFirst('^origin/', '')
+	return value
+}
+
+def validateBranchName(String branchName) {
+	if (branchName == 'main') {
+		return
+	}
+
+	if (!(branchName ==~ /^[A-Za-z0-9._\/-]+$/)) {
+		error("Invalid branch name '${branchName}'. Allowed characters: letters, numbers, '.', '_', '-', '/'.")
+	}
+}
+
+def resolveBranchToShortCommit(String repositoryUrl, String branchName) {
+	validateBranchName(branchName)
+
+	if (branchName == 'main') {
+		return 'main'
+	}
+
+	def output = sh(
+		script: "git ls-remote --heads '${repositoryUrl}' 'refs/heads/${branchName}'",
+		returnStdout: true
+	).trim()
+
+	if (!output) {
+		error("Branch '${branchName}' does not exist in source repository: ${repositoryUrl}")
+	}
+
+	def commitSha = output.tokenize()[0]
+	if (!commitSha || commitSha.length() < 8) {
+		error("Could not resolve a valid commit SHA for branch '${branchName}'.")
+	}
+
+	return commitSha.take(8)
+}
+
+def resolveNodeAddress() {
+	def nodeAddress = sh(
+		script: "kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type==\"InternalIP\")].address}' || true",
+		returnStdout: true
+	).trim()
+
+	return nodeAddress ?: 'localhost'
+}
+
+def resolveServiceNodePort(String namespace, String serviceName) {
+	return sh(
+		script: "kubectl get svc ${serviceName} -n ${namespace} -o jsonpath='{.spec.ports[0].nodePort}' || true",
+		returnStdout: true
+	).trim()
+}
+
+def printNodePortUrls(String namespace, List<String> backendServices) {
+	def nodeAddress = resolveNodeAddress()
+	def printedServices = [] as Set
+
+	def servicesToPrint = []
+	servicesToPrint.addAll(FRONTEND_ENTRY_SERVICES)
+	servicesToPrint.addAll(backendServices)
+
+	echo "Node address for URL output: ${nodeAddress}"
+	echo "If your hosts file maps yas.test.com -> ${nodeAddress}, use URLs below with yas.test.com:<NodePort>."
+
+	servicesToPrint.each { serviceName ->
+		if (printedServices.contains(serviceName)) {
+			return
+		}
+
+		def nodePort = resolveServiceNodePort(namespace, serviceName)
+		if (nodePort) {
+			echo "ACCESS URL [${serviceName}] (IP): http://${nodeAddress}:${nodePort}"
+			echo "ACCESS URL [${serviceName}] (DOMAIN): http://yas.test.com:${nodePort}"
+			printedServices << serviceName
+		} else {
+			echo "ACCESS URL [${serviceName}]: NodePort not found (service may not be ready)."
+		}
+	}
+}
+
+pipeline {
+	agent any
+	options {
+		timestamps()
+		disableConcurrentBuilds()
+	}
+
+	parameters {
+		string(name: 'TAG_CART', defaultValue: 'main', description: 'Input branch name for cart (e.g., main, dev_cart_service)')
+		string(name: 'TAG_TAX', defaultValue: 'main', description: 'Input branch name for tax (e.g., main, dev_tax_service)')
+		string(name: 'TAG_ORDER', defaultValue: 'main', description: 'Input branch name for order (e.g., main, dev_order_service)')
+		string(name: 'TAG_PRODUCT', defaultValue: 'main', description: 'Input branch name for product (e.g., main, dev_product_service)')
+		string(name: 'TAG_MEDIA', defaultValue: 'main', description: 'Input branch name for media (e.g., main, dev_media_service)')
+		string(name: 'TAG_RATING', defaultValue: 'main', description: 'Input branch name for rating (e.g., main, dev_rating_service)')
+		string(name: 'TAG_CUSTOMER', defaultValue: 'main', description: 'Input branch name for customer (e.g., main, dev_customer_service)')
+		string(name: 'TAG_LOCATION', defaultValue: 'main', description: 'Input branch name for location (e.g., main, dev_location_service)')
+		string(name: 'TAG_INVENTORY', defaultValue: 'main', description: 'Input branch name for inventory (e.g., main, dev_inventory_service)')
+		string(name: 'TAG_SEARCH', defaultValue: 'main', description: 'Input branch name for search (e.g., main, dev_search_service)')
+		string(name: 'TAG_PAYMENT', defaultValue: 'main', description: 'Input branch name for payment (e.g., main, dev_payment_service)')
+		string(name: 'TAG_PAYMENT_PAYPAL', defaultValue: 'main', description: 'Input branch name for payment-paypal (e.g., main, dev_payment-paypal_service)')
+		string(name: 'TAG_PROMOTION', defaultValue: 'main', description: 'Input branch name for promotion (e.g., main, dev_promotion_service)')
+		string(name: 'TAG_RECOMMENDATION', defaultValue: 'main', description: 'Input branch name for recommendation (e.g., main, dev_recommendation_service)')
+		string(name: 'TAG_SAMPLEDATA', defaultValue: 'main', description: 'Input branch name for sampledata (e.g., main, dev_sampledata_service)')
+		string(name: 'TAG_WEBHOOK', defaultValue: 'main', description: 'Input branch name for webhook (e.g., main, dev_webhook_service)')
+		string(name: 'TAG_BACKOFFICE_BFF', defaultValue: 'main', description: 'Input branch name for backoffice-bff (e.g., main, dev_backoffice-bff_service)')
+		string(name: 'TAG_STOREFRONT_BFF', defaultValue: 'main', description: 'Input branch name for storefront-bff (e.g., main, dev_storefront-bff_service)')
+		string(name: 'TAG_BACKOFFICE_UI', defaultValue: 'main', description: 'Input branch name for backoffice-ui (e.g., main, dev_backoffice-ui_service)')
+		string(name: 'TAG_STOREFRONT_UI', defaultValue: 'main', description: 'Input branch name for storefront-ui (e.g., main, dev_storefront-ui_service)')
+		booleanParam(name: 'INSTALL_OPERATORS', defaultValue: false, description: 'Install Postgres/Kafka/Elastic operators (cluster-level). Keep false after first bootstrap.')
+	}
+
+	environment {
+		SOURCE_REPO_URL = 'https://github.com/AkiraTomori/DevOps-YAS.git'
+		GITOPS_REPO_URL = 'https://github.com/AkiraTomori/ArgoCD-Advanced.git'
+		GITOPS_TOKEN_CREDENTIALS_ID = 'gitops-token'
+		GITOPS_DIR = 'gitops-yas'
+		GITOPS_COMMIT_USER = 'jenkins-bot'
+		GITOPS_COMMIT_EMAIL = 'jenkins@local'
+
+		CHARTS_DIR = 'gitops-yas'
+		INFRASTRUCTURE_DIR = 'infrastructure'
+		HELM_SHARED_VALUES_FILE = 'environments/test/values-shared.yaml'
+
+		CLEAN_JOB_NAME = 'developer_destroy'
+		CLEAN_JOB_TOKEN = 'yas-destroy-token'
+	}
+
+	stages {
+		stage('Checkout DevOps Repository') {
+			steps {
+				checkout scm
+			}
+		}
+
+		stage('Resolve Branch Inputs To Image Tags') {
+			steps {
+				script {
+					def branchToServices = [:]
+
+					SERVICE_PARAM_MAP.each { service, paramName ->
+						def normalizedBranch = normalizeBranchInput(params[paramName])
+						RESOLVED_BRANCH_BY_SERVICE[service] = normalizedBranch
+
+						if (normalizedBranch != 'main') {
+							NON_MAIN_SERVICES << service
+						}
+
+						if (!branchToServices.containsKey(normalizedBranch)) {
+							branchToServices[normalizedBranch] = []
+						}
+						branchToServices[normalizedBranch] << service
+					}
+
+					def branchToTag = ['main': 'main']
+					branchToServices.each { branchName, services ->
+						if (branchName == 'main') {
+							return
+						}
+
+						try {
+							def shortCommit = resolveBranchToShortCommit(env.SOURCE_REPO_URL, branchName)
+							branchToTag[branchName] = shortCommit
+							echo "Resolved branch '${branchName}' -> image tag '${shortCommit}' for services: ${services.join(', ')}"
+						} catch (Exception e) {
+							error("Failed to resolve branch '${branchName}' for services [${services.join(', ')}]. ${e.getMessage()}")
+						}
+					}
+
+					SERVICE_PARAM_MAP.keySet().each { service ->
+						def branchName = RESOLVED_BRANCH_BY_SERVICE[service]
+						RESOLVED_TAG_BY_SERVICE[service] = branchToTag[branchName]
+					}
+
+					echo "Final service -> branch map: ${RESOLVED_BRANCH_BY_SERVICE}"
+					echo "Final service -> image tag map: ${RESOLVED_TAG_BY_SERVICE}"
+				}
+			}
+		}
+
+		stage('Resolve Namespace') {
+			steps {
+				script {
+					def causes = currentBuild.getBuildCauses()
+					def rawUserId = causes.find { it.userId }?.userId ?: 'anonymous'
+					def userId = normalizeName(rawUserId)
+
+					def suffix = NON_MAIN_SERVICES ? NON_MAIN_SERVICES.join('-') : 'baseline'
+					suffix = normalizeName(suffix)
+
+					def namespace = normalizeName("test-${userId}-${suffix}")
+					if (namespace.length() > 63) {
+						namespace = namespace.take(63).replaceAll('-+$', '')
+					}
+
+					env.TEST_NAMESPACE = namespace
+					env.CLEAN_JOB_URL = "${env.JENKINS_URL}job/${env.CLEAN_JOB_NAME}/buildWithParameters?token=${env.CLEAN_JOB_TOKEN}&TARGET_NAMESPACE=${env.TEST_NAMESPACE}"
+
+					echo "Resolved Jenkins user id: ${userId}"
+					echo "Changed services: ${NON_MAIN_SERVICES ? NON_MAIN_SERVICES.join(', ') : 'none'}"
+					echo "Generated namespace: ${env.TEST_NAMESPACE}"
+				}
+			}
+		}
+
+		stage('Clone ArgoCD Charts Repository') {
+			steps {
+				withCredentials([string(credentialsId: env.GITOPS_TOKEN_CREDENTIALS_ID, variable: 'GITOPS_TOKEN')]) {
+					sh """
+						rm -rf ${env.GITOPS_DIR}
+						REPO_NO_PROTOCOL=$(echo '${env.GITOPS_REPO_URL}' | sed 's#https://##')
+						git clone --depth 1 https://x-access-token:${GITOPS_TOKEN}@${REPO_NO_PROTOCOL} ${env.GITOPS_DIR}
+					"""
+				}
+			}
+		}
+
+		stage('Create Namespace') {
+			steps {
+				sh """
+					kubectl create namespace ${env.TEST_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+					kubectl label namespace ${env.TEST_NAMESPACE} managed-by=developer-build --overwrite
+					kubectl label namespace ${env.TEST_NAMESPACE} owner=${normalizeName((currentBuild.getBuildCauses().find { it.userId }?.userId ?: 'anonymous'))} --overwrite
+				"""
+			}
+		}
+
+		stage('Deploy Base Infrastructure (from ArgoCD-Advanced)') {
+			steps {
+				script {
+					def sharedValuesFile = "${env.WORKSPACE}/${env.CHARTS_DIR}/${env.HELM_SHARED_VALUES_FILE}"
+
+					dir(env.CHARTS_DIR) {
+						sh """
+							TARGET_NAMESPACE=${env.TEST_NAMESPACE} \
+							INSTALL_OPERATORS=${params.INSTALL_OPERATORS} \
+							VALUES_FILE=${sharedValuesFile} \
+							bash ${env.INFRASTRUCTURE_DIR}/scripts/developer-deploy-infra.sh
+						"""
+					}
+				}
+			}
+		}
+
+		stage('Deploy Shared Configuration (from ArgoCD-Advanced)') {
+			steps {
+				dir("${env.CHARTS_DIR}") {
+					sh """
+						helm dependency build charts/yas-configuration
+						helm upgrade --install yas-configuration charts/yas-configuration \
+						  -n ${env.TEST_NAMESPACE} \
+						  -f ${env.HELM_SHARED_VALUES_FILE} \
+						  --wait --timeout 10m
+					"""
+				}
+			}
+		}
+
+		stage('Deploy Services (from ArgoCD-Advanced)') {
+			steps {
+				script {
+					dir("${env.CHARTS_DIR}") {
+						SERVICE_PARAM_MAP.each { service, _ ->
+							def resolvedTag = RESOLVED_TAG_BY_SERVICE[service]
+							def branchName = RESOLVED_BRANCH_BY_SERVICE[service]
+							def imageKey = SERVICE_IMAGE_KEY_MAP.get(service, 'backend')
+							def shouldExposeNodePort = (resolvedTag != 'main') || FRONTEND_ENTRY_SERVICES.contains(service)
+
+							if (!resolvedTag) {
+								error("Missing resolved tag for service '${service}'.")
+							}
+
+							if (!shouldExposeNodePort) {
+								sh """
+									helm dependency build charts/${service}
+									helm upgrade --install ${service} charts/${service} \
+									  -n ${env.TEST_NAMESPACE} \
+									  -f ${env.HELM_SHARED_VALUES_FILE} \
+									  --set ${imageKey}.image.tag=${resolvedTag} \
+									  --wait --timeout 10m
+								"""
+							} else {
+								sh """
+									helm dependency build charts/${service}
+									helm upgrade --install ${service} charts/${service} \
+									  -n ${env.TEST_NAMESPACE} \
+									  -f ${env.HELM_SHARED_VALUES_FILE} \
+									  --set ${imageKey}.image.tag=${resolvedTag} \
+									  --set ${imageKey}.service.type=NodePort \
+									  --wait --timeout 10m
+								"""
+							}
+
+							echo "Deployed ${service} from branch '${branchName}' with image tag '${resolvedTag}'."
+						}
+
+						sh """
+							helm dependency build charts/swagger-ui
+							helm upgrade --install swagger-ui charts/swagger-ui \
+							  -n ${env.TEST_NAMESPACE} \
+							  -f ${env.HELM_SHARED_VALUES_FILE} \
+							  --wait --timeout 10m
+						"""
+					}
+				}
+			}
+		}
+	}
+
+	post {
+		always {
+			cleanWs()
+		}
+		success {
+			script {
+				def backendChangedServices = NON_MAIN_SERVICES.findAll { !SERVICE_IMAGE_KEY_MAP.containsKey(it) }.unique()
+
+				echo "=========================================================================="
+				echo "DEPLOYMENT SUCCESSFUL!"
+				echo "Your test environment '${env.TEST_NAMESPACE}' is ready."
+				printNodePortUrls(env.TEST_NAMESPACE, backendChangedServices)
+				echo "To clean up this environment, click: ${env.CLEAN_JOB_URL}"
+				echo "=========================================================================="
+
+				currentBuild.displayName = "#${currentBuild.number} - ${env.TEST_NAMESPACE}"
+				currentBuild.description = "Deployment successful. Cleanup URL: ${env.CLEAN_JOB_URL}"
+			}
+		}
+		failure {
+			script {
+				echo "=========================================================================="
+				echo "DEPLOYMENT FAILED!"
+				echo "Please check the logs above for details."
+				echo "Cleanup URL: ${env.CLEAN_JOB_URL}"
+				echo "=========================================================================="
+
+				currentBuild.displayName = "#${currentBuild.number} - ${env.TEST_NAMESPACE}"
+				currentBuild.description = "Deployment failed. Cleanup URL: ${env.CLEAN_JOB_URL}"
+			}
+		}
+	}
+}
