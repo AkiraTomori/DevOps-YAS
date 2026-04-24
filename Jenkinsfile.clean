@@ -86,17 +86,6 @@ pipeline {
 			}
 		}
 
-		stage('Uninstall Operators In Namespace') {
-			steps {
-				sh """
-					for release in postgres-operator kafka-operator elastic-operator cert-manager opentelemetry-operator grafana-operator; do
-						echo "Attempting to uninstall \\${release} from namespace ${env.NAMESPACE_TO_DELETE}"
-						helm uninstall "\\${release}" -n ${env.NAMESPACE_TO_DELETE} || true
-					done
-				"""
-			}
-		}
-
 		stage('Delete Namespace') {
 			steps {
 				sh "kubectl delete namespace ${env.NAMESPACE_TO_DELETE} --wait=true --timeout=15m"
