@@ -179,7 +179,7 @@ pipeline {
 		INFRASTRUCTURE_DIR = 'infrastructure'
 		HELM_SHARED_VALUES_FILE = 'environments/test/values-shared.yaml'
 
-		CLEAN_JOB_NAME = 'developer_destroy'
+		CLEAN_JOB_NAME = 'developer_clean'
 		CLEAN_JOB_TOKEN = 'yas-destroy-token'
 	}
 
@@ -294,7 +294,7 @@ pipeline {
 						sh """
 							TARGET_NAMESPACE=${env.TEST_NAMESPACE} \
 							INSTALL_OPERATORS=${params.INSTALL_OPERATORS} \
-							VALUES_FILE=${sharedValuesFile} \
+							VALUES_FILE="${sharedValuesFile}" \
 							bash ${env.INFRASTRUCTURE_DIR}/scripts/developer-deploy-infra.sh
 						"""
 					}
