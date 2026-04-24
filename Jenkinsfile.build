@@ -5,7 +5,7 @@
  * Purpose:
  * - Deploy a full per-developer test namespace (shared config + YAS services)
  * - Resolve image tag from branch input:
- *   - main -> main
+ *   - main -> latest
  *   - non-main branch -> short commit SHA (8 chars) from source repo
  * - Deploy application charts from ArgoCD-Advanced/charts
  */
@@ -207,7 +207,7 @@ pipeline {
 						branchToServices[normalizedBranch] << service
 					}
 
-					def branchToTag = ['main': 'main']
+					def branchToTag = ['main': 'latest']
 					branchToServices.each { branchName, services ->
 						if (branchName == 'main') {
 							return
@@ -305,7 +305,7 @@ pipeline {
 							def resolvedTag = RESOLVED_TAG_BY_SERVICE[service]
 							def branchName = RESOLVED_BRANCH_BY_SERVICE[service]
 							def imageKey = SERVICE_IMAGE_KEY_MAP.get(service, 'backend')
-							def shouldExposeNodePort = (resolvedTag != 'main') || FRONTEND_ENTRY_SERVICES.contains(service)
+							def shouldExposeNodePort = (resolvedTag != 'latest') || FRONTEND_ENTRY_SERVICES.contains(service)
 
 							if (!resolvedTag) {
 								error("Missing resolved tag for service '${service}'.")
