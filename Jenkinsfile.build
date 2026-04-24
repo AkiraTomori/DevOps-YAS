@@ -176,6 +176,7 @@ pipeline {
 		CHARTS_DIR = 'gitops-yas'
 		INFRASTRUCTURE_DIR = 'infrastructure'
 		HELM_SHARED_VALUES_FILE = 'environments/test/values-shared.yaml'
+		CLUSTER_CONFIG_FILE = 'infrastructure/scripts/cluster-config.yaml'
 
 		CLEAN_JOB_NAME = 'developer_clean'
 		CLEAN_JOB_TOKEN = 'yas-destroy-token'
@@ -297,6 +298,23 @@ pipeline {
 			}
 		}
 
+		stage('Load Cluster Config (from ArgoCD-Advanced)') {
+			steps {
+				script {
+					env.DEPLOY_DOMAIN = sh(
+						script: "yq -r '.domain' ${env.CHARTS_DIR}/${env.CLUSTER_CONFIG_FILE}",
+						returnStdout: true
+					).trim()
+
+					if (!env.DEPLOY_DOMAIN) {
+						error("Domain is missing in ${env.CHARTS_DIR}/${env.CLUSTER_CONFIG_FILE}")
+					}
+
+					echo "Loaded deploy domain from cluster-config.yaml: ${env.DEPLOY_DOMAIN}"
+				}
+			}
+		}
+
 		stage('Deploy Services (from ArgoCD-Advanced)') {
 			steps {
 				script {
@@ -306,6 +324,12 @@ pipeline {
 							def branchName = RESOLVED_BRANCH_BY_SERVICE[service]
 							def imageKey = SERVICE_IMAGE_KEY_MAP.get(service, 'backend')
 							def shouldExposeNodePort = (resolvedTag != 'latest') || FRONTEND_ENTRY_SERVICES.contains(service)
+							def ingressHost = 'api.' + env.DEPLOY_DOMAIN
+							if (service == 'backoffice-bff') {
+								ingressHost = 'backoffice.' + env.DEPLOY_DOMAIN
+							} else if (service == 'storefront-bff') {
+								ingressHost = 'storefront.' + env.DEPLOY_DOMAIN
+							}
 
 							if (!resolvedTag) {
 								error("Missing resolved tag for service '${service}'.")
@@ -318,6 +342,7 @@ pipeline {
 									  -n ${env.TEST_NAMESPACE} \
 									  -f ${env.HELM_SHARED_VALUES_FILE} \
 									  --set ${imageKey}.image.tag=${resolvedTag} \
+									  --set backend.ingress.host=${ingressHost} \
 									  --wait --timeout 10m
 								"""
 							} else {
@@ -327,6 +352,7 @@ pipeline {
 									  -n ${env.TEST_NAMESPACE} \
 									  -f ${env.HELM_SHARED_VALUES_FILE} \
 									  --set ${imageKey}.image.tag=${resolvedTag} \
+									  --set backend.ingress.host=${ingressHost} \
 									  --set ${imageKey}.service.type=NodePort \
 									  --wait --timeout 10m
 								"""
@@ -340,6 +366,7 @@ pipeline {
 							helm upgrade --install swagger-ui charts/swagger-ui \
 							  -n ${env.TEST_NAMESPACE} \
 							  -f ${env.HELM_SHARED_VALUES_FILE} \
+							  --set ingress.host=api.${env.DEPLOY_DOMAIN} \
 							  --wait --timeout 10m
 						"""
 					}
