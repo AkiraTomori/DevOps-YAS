@@ -292,10 +292,22 @@ pipeline {
 
 					dir(env.CHARTS_DIR) {
 						sh """
+							echo "[INFO] Phase 1/3 - setup-keycloak"
 							TARGET_NAMESPACE=${env.TEST_NAMESPACE} \
 							INSTALL_OPERATORS=${params.INSTALL_OPERATORS} \
 							VALUES_FILE="${sharedValuesFile}" \
-							bash ${env.INFRASTRUCTURE_DIR}/scripts/developer-deploy-infra.sh
+							bash ${env.INFRASTRUCTURE_DIR}/scripts/setup-keycloak.sh
+
+							echo "[INFO] Phase 2/3 - setup-redis"
+							TARGET_NAMESPACE=${env.TEST_NAMESPACE} \
+							VALUES_FILE="${sharedValuesFile}" \
+							bash ${env.INFRASTRUCTURE_DIR}/scripts/setup-redis.sh
+
+							echo "[INFO] Phase 3/3 - setup-cluster"
+							TARGET_NAMESPACE=${env.TEST_NAMESPACE} \
+							INSTALL_OPERATORS=${params.INSTALL_OPERATORS} \
+							VALUES_FILE="${sharedValuesFile}" \
+							bash ${env.INFRASTRUCTURE_DIR}/scripts/setup-cluster.sh
 						"""
 					}
 				}
