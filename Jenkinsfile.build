@@ -176,7 +176,7 @@ pipeline {
 		CHARTS_DIR = 'gitops-yas'
 		INFRASTRUCTURE_DIR = 'infrastructure'
 		HELM_SHARED_VALUES_FILE = 'environments/test/values-shared.yaml'
-		CLUSTER_CONFIG_FILE = 'infrastructure/scripts/cluster-config.yaml'
+		LEGACY_CLUSTER_CONFIG_FILE = 'infrastructure/scripts/cluster-config.yaml'
 
 		CLEAN_JOB_NAME = 'developer_clean'
 		CLEAN_JOB_TOKEN = 'yas-destroy-token'
@@ -298,19 +298,40 @@ pipeline {
 			}
 		}
 
-		stage('Load Cluster Config (from ArgoCD-Advanced)') {
+		stage('Load Deploy Domain (from values-shared.yaml)') {
 			steps {
 				script {
 					env.DEPLOY_DOMAIN = sh(
-						script: "yq -r '.domain' ${env.CHARTS_DIR}/${env.CLUSTER_CONFIG_FILE}",
+						script: "yq -r '.global.domain' ${env.CHARTS_DIR}/${env.HELM_SHARED_VALUES_FILE}",
 						returnStdout: true
 					).trim()
 
 					if (!env.DEPLOY_DOMAIN) {
-						error("Domain is missing in ${env.CHARTS_DIR}/${env.CLUSTER_CONFIG_FILE}")
+						error("Domain is missing in ${env.CHARTS_DIR}/${env.HELM_SHARED_VALUES_FILE} (.global.domain)")
 					}
 
-					echo "Loaded deploy domain from cluster-config.yaml: ${env.DEPLOY_DOMAIN}"
+					echo "Loaded deploy domain from values-shared.yaml: ${env.DEPLOY_DOMAIN}"
+				}
+			}
+		}
+
+		stage('Validate Domain Consistency (legacy cluster-config)') {
+			steps {
+				script {
+					def legacyDomain = sh(
+						script: "yq -r '.domain // \"\"' ${env.CHARTS_DIR}/${env.LEGACY_CLUSTER_CONFIG_FILE} 2>/dev/null || true",
+						returnStdout: true
+					).trim()
+
+					if (legacyDomain && legacyDomain != env.DEPLOY_DOMAIN) {
+						error("Domain mismatch detected: values-shared(.global.domain)='${env.DEPLOY_DOMAIN}' vs legacy cluster-config(.domain)='${legacyDomain}'.")
+					}
+
+					if (legacyDomain) {
+						echo "Domain consistency check passed against legacy cluster-config.yaml: ${legacyDomain}"
+					} else {
+						echo "Legacy cluster-config domain not found. Skipping consistency check."
+					}
 				}
 			}
 		}
