@@ -1,14 +1,3 @@
-/*
- * Jenkinsfile.deploy
- * Job name suggestion: developer_build
- *
- * Purpose:
- * - Deploy a full per-developer test namespace (shared config + YAS services)
- * - Resolve image tag from branch input:
- *   - main -> latest
- *   - non-main branch -> short commit SHA (8 chars) from source repo
- * - Deploy application charts from ArgoCD-Advanced/charts
- */
 
 def SERVICE_PARAM_MAP = [
 	cart            : 'TAG_CART',
@@ -21,8 +10,8 @@ def SERVICE_PARAM_MAP = [
 	location        : 'TAG_LOCATION',
 	inventory       : 'TAG_INVENTORY',
 	search          : 'TAG_SEARCH',
-	payment         : 'TAG_PAYMENT',
-	'payment-paypal': 'TAG_PAYMENT_PAYPAL',
+	// payment         : 'TAG_PAYMENT',
+	// 'payment-paypal': 'TAG_PAYMENT_PAYPAL',
 	promotion       : 'TAG_PROMOTION',
 	recommendation  : 'TAG_RECOMMENDATION',
 	sampledata      : 'TAG_SAMPLEDATA',
