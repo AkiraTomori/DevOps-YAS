@@ -135,6 +135,59 @@ def printNodePortUrls(String namespace, List<String> backendServices) {
 	}
 }
 
+def deployService(
+	def scriptCtx,
+	String service,
+	String testNamespace,
+	String deployDomain,
+	String sharedValuesFile,
+	Map resolvedTagByService,
+	Map resolvedBranchByService,
+	Map serviceImageKeyMap,
+	List frontendEntryServices
+) {
+	def resolvedTag = resolvedTagByService[service]
+	def branchName = resolvedBranchByService[service]
+	def imageKey = serviceImageKeyMap.get(service, 'backend')
+	def shouldExposeNodePort = (resolvedTag != 'latest') || frontendEntryServices.contains(service)
+
+	def ingressHost = 'api.' + deployDomain
+	if (service == 'backoffice-bff') {
+		ingressHost = 'backoffice.' + deployDomain
+	} else if (service == 'storefront-bff') {
+		ingressHost = 'storefront.' + deployDomain
+	}
+
+	if (!resolvedTag) {
+		scriptCtx.error("Missing resolved tag for service '${service}'.")
+	}
+
+	if (!shouldExposeNodePort) {
+		scriptCtx.sh """
+			helm dependency build charts/${service}
+			helm upgrade --install ${service} charts/${service} \
+			  -n ${testNamespace} \
+			  -f ${sharedValuesFile} \
+			  --set ${imageKey}.image.tag=${resolvedTag} \
+			  --set backend.ingress.host=${ingressHost} \
+			  --wait --timeout 10m
+		"""
+	} else {
+		scriptCtx.sh """
+			helm dependency build charts/${service}
+			helm upgrade --install ${service} charts/${service} \
+			  -n ${testNamespace} \
+			  -f ${sharedValuesFile} \
+			  --set ${imageKey}.image.tag=${resolvedTag} \
+			  --set backend.ingress.host=${ingressHost} \
+			  --set ${imageKey}.service.type=NodePort \
+			  --wait --timeout 10m
+		"""
+	}
+
+	scriptCtx.echo("Deployed ${service} from branch '${branchName}' with image tag '${resolvedTag}'.")
+}
+
 pipeline {
 	agent any
 	options {
@@ -340,46 +393,23 @@ pipeline {
 			steps {
 				script {
 					dir("${env.CHARTS_DIR}") {
-						SERVICE_PARAM_MAP.each { service, _ ->
-							def resolvedTag = RESOLVED_TAG_BY_SERVICE[service]
-							def branchName = RESOLVED_BRANCH_BY_SERVICE[service]
-							def imageKey = SERVICE_IMAGE_KEY_MAP.get(service, 'backend')
-							def shouldExposeNodePort = (resolvedTag != 'latest') || FRONTEND_ENTRY_SERVICES.contains(service)
-							def ingressHost = 'api.' + env.DEPLOY_DOMAIN
-							if (service == 'backoffice-bff') {
-								ingressHost = 'backoffice.' + env.DEPLOY_DOMAIN
-							} else if (service == 'storefront-bff') {
-								ingressHost = 'storefront.' + env.DEPLOY_DOMAIN
-							}
+						def prioritizedServices = ['storefront-ui', 'storefront-bff', 'backoffice-ui', 'backoffice-bff']
 
-							if (!resolvedTag) {
-								error("Missing resolved tag for service '${service}'.")
+						echo "Deploying prioritized services first: ${prioritizedServices.join(', ')}"
+						prioritizedServices.each { service ->
+							if (SERVICE_PARAM_MAP.containsKey(service)) {
+								deployService(
+									this,
+									service,
+									env.TEST_NAMESPACE,
+									env.DEPLOY_DOMAIN,
+									env.HELM_SHARED_VALUES_FILE,
+									RESOLVED_TAG_BY_SERVICE,
+									RESOLVED_BRANCH_BY_SERVICE,
+									SERVICE_IMAGE_KEY_MAP,
+									FRONTEND_ENTRY_SERVICES
+								)
 							}
-
-							if (!shouldExposeNodePort) {
-								sh """
-									helm dependency build charts/${service}
-									helm upgrade --install ${service} charts/${service} \
-									  -n ${env.TEST_NAMESPACE} \
-									  -f ${env.HELM_SHARED_VALUES_FILE} \
-									  --set ${imageKey}.image.tag=${resolvedTag} \
-									  --set backend.ingress.host=${ingressHost} \
-									  --wait --timeout 10m
-								"""
-							} else {
-								sh """
-									helm dependency build charts/${service}
-									helm upgrade --install ${service} charts/${service} \
-									  -n ${env.TEST_NAMESPACE} \
-									  -f ${env.HELM_SHARED_VALUES_FILE} \
-									  --set ${imageKey}.image.tag=${resolvedTag} \
-									  --set backend.ingress.host=${ingressHost} \
-									  --set ${imageKey}.service.type=NodePort \
-									  --wait --timeout 10m
-								"""
-							}
-
-							echo "Deployed ${service} from branch '${branchName}' with image tag '${resolvedTag}'."
 						}
 
 						sh """
@@ -390,6 +420,22 @@ pipeline {
 							  --set ingress.host=api.${env.DEPLOY_DOMAIN} \
 							  --wait --timeout 10m
 						"""
+
+						def remainingServices = SERVICE_PARAM_MAP.keySet().findAll { !prioritizedServices.contains(it) }
+						echo "Deploying remaining services: ${remainingServices.join(', ')}"
+						remainingServices.each { service ->
+							deployService(
+								this,
+								service,
+								env.TEST_NAMESPACE,
+								env.DEPLOY_DOMAIN,
+								env.HELM_SHARED_VALUES_FILE,
+								RESOLVED_TAG_BY_SERVICE,
+								RESOLVED_BRANCH_BY_SERVICE,
+								SERVICE_IMAGE_KEY_MAP,
+								FRONTEND_ENTRY_SERVICES
+							)
+						}
 					}
 				}
 			}
