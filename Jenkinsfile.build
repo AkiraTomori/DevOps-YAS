@@ -82,12 +82,12 @@ def resolveBranchToShortCommit(String repositoryUrl, String branchName) {
 }
 
 def resolveNodeAddress() {
-	def nodeAddress = sh(
-		script: "kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type==\"InternalIP\")].address}' || true",
-		returnStdout: true
-	).trim()
-
-	return nodeAddress ?: 'localhost'
+    def nodeAddress = sh(
+        script: "kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type==\"InternalIP\")].address}'",
+        returnStdout: true
+    ).trim()
+	
+    return nodeAddress ?: 'localhost'
 }
 
 def resolveServiceNodePort(String namespace, String serviceName) {

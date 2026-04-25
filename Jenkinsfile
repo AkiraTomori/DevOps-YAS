@@ -7,6 +7,7 @@ def VALID_BACKEND_SERVICES = [
     'cart', 'customer', 'inventory', 'location', 'media', 'order', 
     'product', 'rating', 'search', 'tax', 'recommendation', 'payment', 
     'payment-paypal', 'sampledata', 'webhook', 'promotion', 'backoffice-bff', 'storefront-bff'
+    
 ]
 
 def VALID_FRONTEND_SERVICES = [
