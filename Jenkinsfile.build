@@ -1,36 +1,37 @@
+import groovy.transform.Field
 
-def SERVICE_PARAM_MAP = [
+@Field def SERVICE_PARAM_MAP = [
 	cart            : 'TAG_CART',
 	tax             : 'TAG_TAX',
 	order           : 'TAG_ORDER',
-	// product         : 'TAG_PRODUCT',
-	// media           : 'TAG_MEDIA',
-	// rating          : 'TAG_RATING',
-	// customer        : 'TAG_CUSTOMER',
-	// location        : 'TAG_LOCATION',
-	// inventory       : 'TAG_INVENTORY',
-	// search          : 'TAG_SEARCH',
+	product         : 'TAG_PRODUCT',
+	media           : 'TAG_MEDIA',
+	rating          : 'TAG_RATING',
+	customer        : 'TAG_CUSTOMER',
+	location        : 'TAG_LOCATION',
+	inventory       : 'TAG_INVENTORY',
+	search          : 'TAG_SEARCH',
 	// payment         : 'TAG_PAYMENT',
 	// 'payment-paypal': 'TAG_PAYMENT_PAYPAL',
-	// promotion       : 'TAG_PROMOTION',
-	// recommendation  : 'TAG_RECOMMENDATION',
+	promotion       : 'TAG_PROMOTION',
+	recommendation  : 'TAG_RECOMMENDATION',
 	sampledata      : 'TAG_SAMPLEDATA',
-	// webhook         : 'TAG_WEBHOOK',
+	webhook         : 'TAG_WEBHOOK',
 	'backoffice-bff': 'TAG_BACKOFFICE_BFF',
 	'storefront-bff': 'TAG_STOREFRONT_BFF',
 	'backoffice-ui' : 'TAG_BACKOFFICE_UI',
 	'storefront-ui' : 'TAG_STOREFRONT_UI'
 ]
 
-def SERVICE_IMAGE_KEY_MAP = [
+@Field def SERVICE_IMAGE_KEY_MAP = [
 	'backoffice-ui': 'ui',
 	'storefront-ui': 'ui'
 ]
 
-def RESOLVED_BRANCH_BY_SERVICE = [:]
-def RESOLVED_TAG_BY_SERVICE = [:]
-def NON_MAIN_SERVICES = []
-def FRONTEND_ENTRY_SERVICES = ['storefront-ui', 'backoffice-ui']
+@Field def RESOLVED_BRANCH_BY_SERVICE = [:]
+@Field def RESOLVED_TAG_BY_SERVICE = [:]
+@Field def NON_MAIN_SERVICES = []
+@Field def FRONTEND_ENTRY_SERVICES = ['storefront-ui', 'backoffice-ui']
 
 def normalizeName(String input) {
 	return input.toLowerCase().replaceAll('[^a-z0-9-]', '-').replaceAll('-+', '-').replaceAll('^-|-$', '')
@@ -316,7 +317,7 @@ pipeline {
 					}
 
 					env.TEST_NAMESPACE = namespace
-					env.CLEAN_JOB_URL = "${env.JENKINS_URL}job/${env.CLEAN_JOB_NAME}/buildWithParameters?token=${env.CLEAN_JOB_TOKEN}&TARGET_NAMESPACE=${env.TEST_NAMESPACE}"
+					env.CLEAN_JOB_URL = "${env.JENKINS_URL}job/${env.CLEAN_JOB_NAME}/buildWithParameters?token=${env.CLEAN_JOB_TOKEN}&TARGET_NAMESPACE=${env.TEST_NAMESPACE}&FORCE_DELETE=true"
 
 					echo "Resolved Jenkins user id: ${userId}"
 					echo "Changed services: ${NON_MAIN_SERVICES ? NON_MAIN_SERVICES.join(', ') : 'none'}"
