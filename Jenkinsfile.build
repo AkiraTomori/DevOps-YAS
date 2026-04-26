@@ -138,6 +138,7 @@ def deployService(
 	def resolvedTag = resolvedTagByService[service]
 	def branchName = resolvedBranchByService[service]
 	def imageKey = serviceImageKeyMap.get(service, 'backend')
+	def isUiService = serviceImageKeyMap.containsKey(service)
 	def shouldExposeNodePort = (resolvedTag != 'latest') || frontendEntryServices.contains(service)
 
 	def ingressHost = 'api.' + deployDomain
@@ -152,26 +153,49 @@ def deployService(
 	}
 
 	if (!shouldExposeNodePort) {
-		scriptCtx.sh """
-			helm dependency build charts/${service}
-			helm upgrade --install ${service} charts/${service} \
-			  -n ${testNamespace} \
-			  -f ${sharedValuesFile} \
-			  --set ${imageKey}.image.tag=${resolvedTag} \
-			  --set backend.ingress.host=${ingressHost} \
-			  --wait --timeout 10m
-		"""
+		if (isUiService) {
+			scriptCtx.sh """
+				helm dependency build charts/${service}
+				helm upgrade --install ${service} charts/${service} \
+				  -n ${testNamespace} \
+				  -f ${sharedValuesFile} \
+				  --set ${imageKey}.image.tag=${resolvedTag} \
+				  --wait --timeout 10m
+			"""
+		} else {
+			scriptCtx.sh """
+				helm dependency build charts/${service}
+				helm upgrade --install ${service} charts/${service} \
+				  -n ${testNamespace} \
+				  -f ${sharedValuesFile} \
+				  --set ${imageKey}.image.tag=${resolvedTag} \
+				  --set backend.ingress.host=${ingressHost} \
+				  --wait --timeout 10m
+			"""
+		}
 	} else {
-		scriptCtx.sh """
-			helm dependency build charts/${service}
-			helm upgrade --install ${service} charts/${service} \
-			  -n ${testNamespace} \
-			  -f ${sharedValuesFile} \
-			  --set ${imageKey}.image.tag=${resolvedTag} \
-			  --set backend.ingress.host=${ingressHost} \
-			  --set ${imageKey}.service.type=NodePort \
-			  --wait --timeout 10m
-		"""
+		if (isUiService) {
+			scriptCtx.sh """
+				helm dependency build charts/${service}
+				helm upgrade --install ${service} charts/${service} \
+				  -n ${testNamespace} \
+				  -f ${sharedValuesFile} \
+				  --set ${imageKey}.image.tag=${resolvedTag} \
+				  --set ${imageKey}.service.type=NodePort \
+				  --wait --timeout 10m
+			"""
+		} else {
+			scriptCtx.sh """
+				helm dependency build charts/${service}
+				helm upgrade --install ${service} charts/${service} \
+				  -n ${testNamespace} \
+				  -f ${sharedValuesFile} \
+				  --set ${imageKey}.image.tag=${resolvedTag} \
+				  --set backend.ingress.host=${ingressHost} \
+				  --set ${imageKey}.service.type=NodePort \
+				  --wait --timeout 10m
+			"""
+		}
 	}
 
 	scriptCtx.echo("Deployed ${service} from branch '${branchName}' with image tag '${resolvedTag}'.")
