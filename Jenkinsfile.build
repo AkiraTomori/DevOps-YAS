@@ -202,6 +202,55 @@ def deployService(
 	scriptCtx.echo("Deployed ${service} from branch '${branchName}' with image tag '${resolvedTag}'.")
 }
 
+def seedMediaAssets(def scriptCtx, String namespace, String workspaceDir) {
+	def sampleImagesPath = "${workspaceDir}/sampledata/images/sample"
+
+	scriptCtx.sh """
+		set -e
+		if [ ! -d '${sampleImagesPath}' ]; then
+			echo "Skipping media asset seeding: '${sampleImagesPath}' not found."
+			exit 0
+		fi
+
+		kubectl rollout status deployment/media -n '${namespace}' --timeout=180s
+		MEDIA_POD=\$(kubectl get pod -n '${namespace}' -l app.kubernetes.io/name=media -o jsonpath='{.items[0].metadata.name}')
+		if [ -z "\$MEDIA_POD" ]; then
+			echo "Skipping media asset seeding: media pod not found in namespace '${namespace}'."
+			exit 0
+		fi
+
+		kubectl exec -n '${namespace}' "\$MEDIA_POD" -- mkdir -p /images
+		kubectl cp '${sampleImagesPath}' '${namespace}/'"\$MEDIA_POD":/images/
+		echo "Media assets seeded to pod '\$MEDIA_POD' in namespace '${namespace}'."
+	"""
+}
+
+def applyNamespaceApiGateway(def scriptCtx, String chartsDir, String namespace, String deployDomain) {
+	def gatewayManifest = "${chartsDir}/infrastructure/scripts/nginx-api-gateway.yaml"
+
+	scriptCtx.sh """
+		set -e
+		if [ ! -f '${gatewayManifest}' ]; then
+			echo "Skipping API gateway apply: '${gatewayManifest}' not found."
+			exit 0
+		fi
+
+		TMP_MANIFEST=\$(mktemp)
+		cp '${gatewayManifest}' "\$TMP_MANIFEST"
+
+		# Replace hardcoded namespace and host with the current developer namespace and domain.
+		sed -i "s|namespace: test-minhhuy-baseline|namespace: ${namespace}|g" "\$TMP_MANIFEST"
+		sed -i "s|\\.test-minhhuy-baseline\\.svc\\.cluster\\.local|.${namespace}.svc.cluster.local|g" "\$TMP_MANIFEST"
+		sed -i "s|host: api.yas.test.com|host: api.${deployDomain}|g" "\$TMP_MANIFEST"
+
+		kubectl apply -f "\$TMP_MANIFEST"
+		kubectl rollout status deployment/nginx -n '${namespace}' --timeout=180s
+		rm -f "\$TMP_MANIFEST"
+
+		echo "Applied namespace-scoped API gateway to namespace '${namespace}' with host 'api.${deployDomain}'."
+	"""
+}
+
 pipeline {
 	agent any
 	options {
@@ -451,6 +500,22 @@ pipeline {
 							)
 						}
 					}
+				}
+			}
+		}
+
+		stage('Apply Namespace API Gateway (Swagger)') {
+			steps {
+				script {
+					applyNamespaceApiGateway(this, env.CHARTS_DIR, env.TEST_NAMESPACE, env.DEPLOY_DOMAIN)
+				}
+			}
+		}
+
+		stage('Seed Media Assets') {
+			steps {
+				script {
+					seedMediaAssets(this, env.TEST_NAMESPACE, env.WORKSPACE)
 				}
 			}
 		}
