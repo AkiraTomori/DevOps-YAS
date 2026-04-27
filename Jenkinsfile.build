@@ -161,7 +161,6 @@ def deployService(
 				  -n ${testNamespace} \
 				  -f ${sharedValuesFile} \
 				  --set ${imageKey}.image.tag=${resolvedTag} \
-				  --wait --timeout 10m
 			"""
 		} else {
 			scriptCtx.sh """
@@ -171,7 +170,6 @@ def deployService(
 				  -f ${sharedValuesFile} \
 				  --set ${imageKey}.image.tag=${resolvedTag} \
 				  --set backend.ingress.host=${ingressHost} \
-				  --wait --timeout 10m
 			"""
 		}
 	} else {
@@ -183,7 +181,6 @@ def deployService(
 				  -f ${sharedValuesFile} \
 				  --set ${imageKey}.image.tag=${resolvedTag} \
 				  --set ${imageKey}.service.type=NodePort \
-				  --wait --timeout 10m
 			"""
 		} else {
 			scriptCtx.sh """
@@ -194,7 +191,6 @@ def deployService(
 				  --set ${imageKey}.image.tag=${resolvedTag} \
 				  --set backend.ingress.host=${ingressHost} \
 				  --set ${imageKey}.service.type=NodePort \
-				  --wait --timeout 10m
 			"""
 		}
 	}
