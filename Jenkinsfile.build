@@ -170,6 +170,7 @@ def deployService(
 				  -f ${sharedValuesFile} \
 				  --set ${imageKey}.image.tag=${resolvedTag} \
 				  --set backend.ingress.host=${ingressHost} \
+				sleep 60
 			"""
 		}
 	} else {
@@ -191,6 +192,7 @@ def deployService(
 				  --set ${imageKey}.image.tag=${resolvedTag} \
 				  --set backend.ingress.host=${ingressHost} \
 				  --set ${imageKey}.service.type=NodePort \
+				sleep 60
 			"""
 		}
 	}
@@ -265,8 +267,8 @@ pipeline {
 		string(name: 'TAG_LOCATION', defaultValue: 'main', description: 'Input branch name for location (e.g., main, dev_location_service)')
 		string(name: 'TAG_INVENTORY', defaultValue: 'main', description: 'Input branch name for inventory (e.g., main, dev_inventory_service)')
 		string(name: 'TAG_SEARCH', defaultValue: 'main', description: 'Input branch name for search (e.g., main, dev_search_service)')
-		string(name: 'TAG_PAYMENT', defaultValue: 'main', description: 'Input branch name for payment (e.g., main, dev_payment_service)')
-		string(name: 'TAG_PAYMENT_PAYPAL', defaultValue: 'main', description: 'Input branch name for payment-paypal (e.g., main, dev_payment-paypal_service)')
+		// string(name: 'TAG_PAYMENT', defaultValue: 'main', description: 'Input branch name for payment (e.g., main, dev_payment_service)')
+		// string(name: 'TAG_PAYMENT_PAYPAL', defaultValue: 'main', description: 'Input branch name for payment-paypal (e.g., main, dev_payment-paypal_service)')
 		string(name: 'TAG_PROMOTION', defaultValue: 'main', description: 'Input branch name for promotion (e.g., main, dev_promotion_service)')
 		string(name: 'TAG_RECOMMENDATION', defaultValue: 'main', description: 'Input branch name for recommendation (e.g., main, dev_recommendation_service)')
 		string(name: 'TAG_SAMPLEDATA', defaultValue: 'main', description: 'Input branch name for sampledata (e.g., main, dev_sampledata_service)')
