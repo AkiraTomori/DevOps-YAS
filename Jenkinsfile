@@ -26,7 +26,9 @@ def writeGitOpsServiceOverride(String environmentName, String service, String ta
     serviceCfg.image = imageCfg
     cfg[imageRoot] = serviceCfg
 
-    writeYaml file: filePath, data: cfg, overwrite: true
+    def tempFilePath = "${filePath}.tmp"
+    writeYaml file: tempFilePath, data: cfg, overwrite: true
+    sh "mv -f ${tempFilePath} ${filePath}"
 }
 
 def updateGitOpsRepo(String envName, String imageTag, List backendSvcs, List frontendSvcs) {
