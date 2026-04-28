@@ -161,7 +161,7 @@ def deployService(
 				  -n ${testNamespace} \
 				  -f ${sharedValuesFile} \
 				  --set ${imageKey}.image.tag=${resolvedTag} \
-				  --wait --timeout 5m
+				  --wait --timeout 10m
 			"""
 		} else {
 			scriptCtx.sh """
@@ -171,7 +171,7 @@ def deployService(
 				  -f ${sharedValuesFile} \
 				  --set ${imageKey}.image.tag=${resolvedTag} \
 				  --set backend.ingress.host=${ingressHost} \
-				  --wait --timeout 5m	
+				  --wait --timeout 10m	
 			"""
 		}
 	} else {
@@ -183,7 +183,7 @@ def deployService(
 				  -f ${sharedValuesFile} \
 				  --set ${imageKey}.image.tag=${resolvedTag} \
 				  --set ${imageKey}.service.type=NodePort \
-				  --wait --timeout 5m
+				  --wait --timeout 10m
 			"""
 		} else {
 			scriptCtx.sh """
@@ -194,7 +194,7 @@ def deployService(
 				  --set ${imageKey}.image.tag=${resolvedTag} \
 				  --set backend.ingress.host=${ingressHost} \
 				  --set ${imageKey}.service.type=NodePort \
-				  --wait --timeout 5m
+				  --wait --timeout 10m
 			"""
 		}
 	}
@@ -481,7 +481,7 @@ pipeline {
 							  -n ${env.TEST_NAMESPACE} \
 							  -f ${env.HELM_SHARED_VALUES_FILE} \
 							  --set ingress.host=api.${env.DEPLOY_DOMAIN} \
-							  --wait --timeout 5m
+							  --wait --timeout 10m
 						"""
 
 						def remainingServices = SERVICE_PARAM_MAP.keySet().findAll { !prioritizedServices.contains(it) }
