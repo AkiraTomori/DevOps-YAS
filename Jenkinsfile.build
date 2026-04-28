@@ -171,7 +171,7 @@ def deployService(
 				  -f ${sharedValuesFile} \
 				  --set ${imageKey}.image.tag=${resolvedTag} \
 				  --set backend.ingress.host=${ingressHost} \
-				  --wait --timeout 5m
+				  --wait --timeout 5m	
 			"""
 		}
 	} else {
@@ -269,8 +269,8 @@ pipeline {
 		string(name: 'TAG_LOCATION', defaultValue: 'main', description: 'Input branch name for location (e.g., main, dev_location_service)')
 		string(name: 'TAG_INVENTORY', defaultValue: 'main', description: 'Input branch name for inventory (e.g., main, dev_inventory_service)')
 		string(name: 'TAG_SEARCH', defaultValue: 'main', description: 'Input branch name for search (e.g., main, dev_search_service)')
-		// string(name: 'TAG_PAYMENT', defaultValue: 'main', description: 'Input branch name for payment (e.g., main, dev_payment_service)')
-		// string(name: 'TAG_PAYMENT_PAYPAL', defaultValue: 'main', description: 'Input branch name for payment-paypal (e.g., main, dev_payment-paypal_service)')
+		string(name: 'TAG_PAYMENT', defaultValue: 'main', description: 'Input branch name for payment (e.g., main, dev_payment_service)')
+		string(name: 'TAG_PAYMENT_PAYPAL', defaultValue: 'main', description: 'Input branch name for payment-paypal (e.g., main, dev_payment-paypal_service)')
 		string(name: 'TAG_PROMOTION', defaultValue: 'main', description: 'Input branch name for promotion (e.g., main, dev_promotion_service)')
 		string(name: 'TAG_RECOMMENDATION', defaultValue: 'main', description: 'Input branch name for recommendation (e.g., main, dev_recommendation_service)')
 		string(name: 'TAG_SAMPLEDATA', defaultValue: 'main', description: 'Input branch name for sampledata (e.g., main, dev_sampledata_service)')
@@ -408,7 +408,7 @@ pipeline {
 						helm upgrade --install yas-configuration charts/yas-configuration \
 						  -n ${env.TEST_NAMESPACE} \
 						  -f ${env.HELM_SHARED_VALUES_FILE} \
-						  --wait --timeout 5m
+						  --wait --timeout 10m
 					"""
 				}
 			}
@@ -456,53 +456,24 @@ pipeline {
 			steps {
 				script {
 					dir("${env.CHARTS_DIR}") {
-						echo "Deploy storefront pair: storefront-ui + storefront-bff"
-						deployService(
-							this,
-							'storefront-ui',
-							env.TEST_NAMESPACE,
-							env.DEPLOY_DOMAIN,
-							env.HELM_SHARED_VALUES_FILE,
-							RESOLVED_TAG_BY_SERVICE,
-							RESOLVED_BRANCH_BY_SERVICE,
-							SERVICE_IMAGE_KEY_MAP,
-							FRONTEND_ENTRY_SERVICES
-						)
-						deployService(
-							this,
-							'storefront-bff',
-							env.TEST_NAMESPACE,
-							env.DEPLOY_DOMAIN,
-							env.HELM_SHARED_VALUES_FILE,
-							RESOLVED_TAG_BY_SERVICE,
-							RESOLVED_BRANCH_BY_SERVICE,
-							SERVICE_IMAGE_KEY_MAP,
-							FRONTEND_ENTRY_SERVICES
-						)
+						def prioritizedServices = ['storefront-ui', 'storefront-bff', 'backoffice-ui', 'backoffice-bff']
 
-						echo "Deploy backoffice pair: backoffice-ui + backoffice-bff"
-						deployService(
-							this,
-							'backoffice-ui',
-							env.TEST_NAMESPACE,
-							env.DEPLOY_DOMAIN,
-							env.HELM_SHARED_VALUES_FILE,
-							RESOLVED_TAG_BY_SERVICE,
-							RESOLVED_BRANCH_BY_SERVICE,
-							SERVICE_IMAGE_KEY_MAP,
-							FRONTEND_ENTRY_SERVICES
-						)
-						deployService(
-							this,
-							'backoffice-bff',
-							env.TEST_NAMESPACE,
-							env.DEPLOY_DOMAIN,
-							env.HELM_SHARED_VALUES_FILE,
-							RESOLVED_TAG_BY_SERVICE,
-							RESOLVED_BRANCH_BY_SERVICE,
-							SERVICE_IMAGE_KEY_MAP,
-							FRONTEND_ENTRY_SERVICES
-						)
+						echo "Deploying prioritized services first: ${prioritizedServices.join(', ')}"
+						prioritizedServices.each { service ->
+							if (SERVICE_PARAM_MAP.containsKey(service)) {
+								deployService(
+									this,
+									service,
+									env.TEST_NAMESPACE,
+									env.DEPLOY_DOMAIN,
+									env.HELM_SHARED_VALUES_FILE,
+									RESOLVED_TAG_BY_SERVICE,
+									RESOLVED_BRANCH_BY_SERVICE,
+									SERVICE_IMAGE_KEY_MAP,
+									FRONTEND_ENTRY_SERVICES
+								)
+							}
+						}
 
 						sh """
 							helm dependency build charts/swagger-ui
@@ -513,8 +484,7 @@ pipeline {
 							  --wait --timeout 5m
 						"""
 
-						def pairedServices = ['storefront-ui', 'storefront-bff', 'backoffice-ui', 'backoffice-bff']
-						def remainingServices = SERVICE_PARAM_MAP.keySet().findAll { !pairedServices.contains(it) }
+						def remainingServices = SERVICE_PARAM_MAP.keySet().findAll { !prioritizedServices.contains(it) }
 						echo "Deploying remaining services: ${remainingServices.join(', ')}"
 						remainingServices.each { service ->
 							deployService(
