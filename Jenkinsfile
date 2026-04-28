@@ -24,6 +24,7 @@ def writeGitOpsServiceOverride(String environmentName, String service, String ta
               image:
                 tag: "${tag}"
         """.stripIndent()
+        
     )
 }
 
