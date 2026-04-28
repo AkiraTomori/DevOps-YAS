@@ -160,7 +160,8 @@ def deployService(
 				helm upgrade --install ${service} charts/${service} \
 				  -n ${testNamespace} \
 				  -f ${sharedValuesFile} \
-				  --set ${imageKey}.image.tag=${resolvedTag}
+				  --set ${imageKey}.image.tag=${resolvedTag} \
+				  --wait --timeout 5m
 			"""
 		} else {
 			scriptCtx.sh """
@@ -169,7 +170,8 @@ def deployService(
 				  -n ${testNamespace} \
 				  -f ${sharedValuesFile} \
 				  --set ${imageKey}.image.tag=${resolvedTag} \
-				  --set backend.ingress.host=${ingressHost}
+				  --set backend.ingress.host=${ingressHost} \
+				  --wait --timeout 5m
 			"""
 		}
 	} else {
@@ -180,7 +182,8 @@ def deployService(
 				  -n ${testNamespace} \
 				  -f ${sharedValuesFile} \
 				  --set ${imageKey}.image.tag=${resolvedTag} \
-				  --set ${imageKey}.service.type=NodePort
+				  --set ${imageKey}.service.type=NodePort \
+				  --wait --timeout 5m
 			"""
 		} else {
 			scriptCtx.sh """
@@ -190,7 +193,8 @@ def deployService(
 				  -f ${sharedValuesFile} \
 				  --set ${imageKey}.image.tag=${resolvedTag} \
 				  --set backend.ingress.host=${ingressHost} \
-				  --set ${imageKey}.service.type=NodePort
+				  --set ${imageKey}.service.type=NodePort \
+				  --wait --timeout 5m
 			"""
 		}
 	}
@@ -404,7 +408,7 @@ pipeline {
 						helm upgrade --install yas-configuration charts/yas-configuration \
 						  -n ${env.TEST_NAMESPACE} \
 						  -f ${env.HELM_SHARED_VALUES_FILE} \
-						  --wait --timeout 10m
+						  --wait --timeout 5m
 					"""
 				}
 			}
@@ -475,7 +479,6 @@ pipeline {
 							SERVICE_IMAGE_KEY_MAP,
 							FRONTEND_ENTRY_SERVICES
 						)
-						sh "sleep 60"
 
 						echo "Deploy backoffice pair: backoffice-ui + backoffice-bff"
 						deployService(
@@ -500,16 +503,15 @@ pipeline {
 							SERVICE_IMAGE_KEY_MAP,
 							FRONTEND_ENTRY_SERVICES
 						)
-						sh "sleep 60"
 
 						sh """
 							helm dependency build charts/swagger-ui
 							helm upgrade --install swagger-ui charts/swagger-ui \
 							  -n ${env.TEST_NAMESPACE} \
 							  -f ${env.HELM_SHARED_VALUES_FILE} \
-							  --set ingress.host=api.${env.DEPLOY_DOMAIN} 
+							  --set ingress.host=api.${env.DEPLOY_DOMAIN} \
+							  --wait --timeout 5m
 						"""
-						sh "sleep 20"
 
 						def pairedServices = ['storefront-ui', 'storefront-bff', 'backoffice-ui', 'backoffice-bff']
 						def remainingServices = SERVICE_PARAM_MAP.keySet().findAll { !pairedServices.contains(it) }
@@ -526,7 +528,6 @@ pipeline {
 								SERVICE_IMAGE_KEY_MAP,
 								FRONTEND_ENTRY_SERVICES
 							)
-							sh "sleep 60"
 						}
 					}
 				}
