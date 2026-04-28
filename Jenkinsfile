@@ -17,15 +17,16 @@ def VALID_FRONTEND_SERVICES = [
 
 // Hàm ghi đè file YAML GitOps (Phân biệt backend và ui)
 def writeGitOpsServiceOverride(String environmentName, String service, String tag, String imageRoot) {
-    writeFile(
-        file: "environments/${environmentName}/services/${service}.yaml",
-        text: """\
-            ${imageRoot}:
-              image:
-                tag: "${tag}"
-        """.stripIndent()
-        
-    )
+    def filePath = "environments/${environmentName}/services/${service}.yaml"
+    def cfg = fileExists(filePath) ? (readYaml(file: filePath) ?: [:]) : [:]
+    def serviceCfg = (cfg[imageRoot] instanceof Map) ? cfg[imageRoot] : [:]
+    def imageCfg = (serviceCfg.image instanceof Map) ? serviceCfg.image : [:]
+
+    imageCfg.tag = tag
+    serviceCfg.image = imageCfg
+    cfg[imageRoot] = serviceCfg
+
+    writeYaml file: filePath, data: cfg
 }
 
 def updateGitOpsRepo(String envName, String imageTag, List backendSvcs, List frontendSvcs) {
