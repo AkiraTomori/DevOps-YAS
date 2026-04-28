@@ -11,7 +11,7 @@ import groovy.transform.Field
 	location        : 'TAG_LOCATION',
 	inventory       : 'TAG_INVENTORY',
 	search          : 'TAG_SEARCH',
-	// payment         : 'TAG_PAYMENT',
+	payment         : 'TAG_PAYMENT',
 	// 'payment-paypal': 'TAG_PAYMENT_PAYPAL',
 	promotion       : 'TAG_PROMOTION',
 	recommendation  : 'TAG_RECOMMENDATION',
