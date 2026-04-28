@@ -160,7 +160,7 @@ def deployService(
 				helm upgrade --install ${service} charts/${service} \
 				  -n ${testNamespace} \
 				  -f ${sharedValuesFile} \
-				  --set ${imageKey}.image.tag=${resolvedTag} \
+				  --set ${imageKey}.image.tag=${resolvedTag}
 			"""
 		} else {
 			scriptCtx.sh """
@@ -169,8 +169,7 @@ def deployService(
 				  -n ${testNamespace} \
 				  -f ${sharedValuesFile} \
 				  --set ${imageKey}.image.tag=${resolvedTag} \
-				  --set backend.ingress.host=${ingressHost} \
-				sleep 60
+				  --set backend.ingress.host=${ingressHost}
 			"""
 		}
 	} else {
@@ -181,7 +180,7 @@ def deployService(
 				  -n ${testNamespace} \
 				  -f ${sharedValuesFile} \
 				  --set ${imageKey}.image.tag=${resolvedTag} \
-				  --set ${imageKey}.service.type=NodePort \
+				  --set ${imageKey}.service.type=NodePort
 			"""
 		} else {
 			scriptCtx.sh """
@@ -191,8 +190,7 @@ def deployService(
 				  -f ${sharedValuesFile} \
 				  --set ${imageKey}.image.tag=${resolvedTag} \
 				  --set backend.ingress.host=${ingressHost} \
-				  --set ${imageKey}.service.type=NodePort \
-				sleep 60
+				  --set ${imageKey}.service.type=NodePort
 			"""
 		}
 	}
@@ -454,35 +452,67 @@ pipeline {
 			steps {
 				script {
 					dir("${env.CHARTS_DIR}") {
-						def prioritizedServices = ['storefront-ui', 'storefront-bff', 'backoffice-ui', 'backoffice-bff']
+						echo "Deploy storefront pair: storefront-ui + storefront-bff"
+						deployService(
+							this,
+							'storefront-ui',
+							env.TEST_NAMESPACE,
+							env.DEPLOY_DOMAIN,
+							env.HELM_SHARED_VALUES_FILE,
+							RESOLVED_TAG_BY_SERVICE,
+							RESOLVED_BRANCH_BY_SERVICE,
+							SERVICE_IMAGE_KEY_MAP,
+							FRONTEND_ENTRY_SERVICES
+						)
+						deployService(
+							this,
+							'storefront-bff',
+							env.TEST_NAMESPACE,
+							env.DEPLOY_DOMAIN,
+							env.HELM_SHARED_VALUES_FILE,
+							RESOLVED_TAG_BY_SERVICE,
+							RESOLVED_BRANCH_BY_SERVICE,
+							SERVICE_IMAGE_KEY_MAP,
+							FRONTEND_ENTRY_SERVICES
+						)
+						sh "sleep 60"
 
-						echo "Deploying prioritized services first: ${prioritizedServices.join(', ')}"
-						prioritizedServices.each { service ->
-							if (SERVICE_PARAM_MAP.containsKey(service)) {
-								deployService(
-									this,
-									service,
-									env.TEST_NAMESPACE,
-									env.DEPLOY_DOMAIN,
-									env.HELM_SHARED_VALUES_FILE,
-									RESOLVED_TAG_BY_SERVICE,
-									RESOLVED_BRANCH_BY_SERVICE,
-									SERVICE_IMAGE_KEY_MAP,
-									FRONTEND_ENTRY_SERVICES
-								)
-							}
-						}
+						echo "Deploy backoffice pair: backoffice-ui + backoffice-bff"
+						deployService(
+							this,
+							'backoffice-ui',
+							env.TEST_NAMESPACE,
+							env.DEPLOY_DOMAIN,
+							env.HELM_SHARED_VALUES_FILE,
+							RESOLVED_TAG_BY_SERVICE,
+							RESOLVED_BRANCH_BY_SERVICE,
+							SERVICE_IMAGE_KEY_MAP,
+							FRONTEND_ENTRY_SERVICES
+						)
+						deployService(
+							this,
+							'backoffice-bff',
+							env.TEST_NAMESPACE,
+							env.DEPLOY_DOMAIN,
+							env.HELM_SHARED_VALUES_FILE,
+							RESOLVED_TAG_BY_SERVICE,
+							RESOLVED_BRANCH_BY_SERVICE,
+							SERVICE_IMAGE_KEY_MAP,
+							FRONTEND_ENTRY_SERVICES
+						)
+						sh "sleep 60"
 
 						sh """
 							helm dependency build charts/swagger-ui
 							helm upgrade --install swagger-ui charts/swagger-ui \
 							  -n ${env.TEST_NAMESPACE} \
 							  -f ${env.HELM_SHARED_VALUES_FILE} \
-							  --set ingress.host=api.${env.DEPLOY_DOMAIN} \
-							  --wait --timeout 10m
+							  --set ingress.host=api.${env.DEPLOY_DOMAIN} 
 						"""
+						sh "sleep 20"
 
-						def remainingServices = SERVICE_PARAM_MAP.keySet().findAll { !prioritizedServices.contains(it) }
+						def pairedServices = ['storefront-ui', 'storefront-bff', 'backoffice-ui', 'backoffice-bff']
+						def remainingServices = SERVICE_PARAM_MAP.keySet().findAll { !pairedServices.contains(it) }
 						echo "Deploying remaining services: ${remainingServices.join(', ')}"
 						remainingServices.each { service ->
 							deployService(
@@ -496,6 +526,7 @@ pipeline {
 								SERVICE_IMAGE_KEY_MAP,
 								FRONTEND_ENTRY_SERVICES
 							)
+							sh "sleep 60"
 						}
 					}
 				}
