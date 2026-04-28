@@ -98,6 +98,15 @@ def resolveServiceNodePort(String namespace, String serviceName) {
 	).trim()
 }
 
+def buildIngressHost(String hostPrefix, String namespace, String deployDomain) {
+	def hostLabel = "${hostPrefix}-${namespace}"
+	if (hostLabel.length() > 63) {
+		hostLabel = hostLabel.take(63).replaceAll('-+$', '')
+	}
+
+	return "${hostLabel}.${deployDomain}"
+}
+
 def printNodePortUrls(String namespace, List<String> backendServices) {
 	def nodeAddress = resolveNodeAddress()
 	def printedServices = [] as Set
@@ -142,11 +151,11 @@ def deployService(
 	def isUiService = serviceImageKeyMap.containsKey(service)
 	def shouldExposeNodePort = (resolvedTag != 'latest') || frontendEntryServices.contains(service)
 
-	def ingressHost = 'api.' + deployDomain
+	def ingressHost = buildIngressHost('api', testNamespace, deployDomain)
 	if (service == 'backoffice-bff') {
-		ingressHost = 'backoffice.' + deployDomain
+		ingressHost = buildIngressHost('backoffice', testNamespace, deployDomain)
 	} else if (service == 'storefront-bff') {
-		ingressHost = 'storefront.' + deployDomain
+		ingressHost = buildIngressHost('storefront', testNamespace, deployDomain)
 	}
 
 	if (!resolvedTag) {
@@ -241,13 +250,13 @@ def applyNamespaceApiGateway(def scriptCtx, String chartsDir, String namespace, 
 		# Replace hardcoded namespace and host with the current developer namespace and domain.
 		sed -i "s|namespace: test-minhhuy-baseline|namespace: ${namespace}|g" "\$TMP_MANIFEST"
 		sed -i "s|\\.test-minhhuy-baseline\\.svc\\.cluster\\.local|.${namespace}.svc.cluster.local|g" "\$TMP_MANIFEST"
-		sed -i "s|host: api.yas.test.com|host: api.${deployDomain}|g" "\$TMP_MANIFEST"
+			sed -i "s|host: api.yas.test.com|host: ${buildIngressHost('api', namespace, deployDomain)}|g" "\$TMP_MANIFEST"
 
 		kubectl apply -f "\$TMP_MANIFEST"
 		kubectl rollout status deployment/nginx -n '${namespace}' --timeout=180s
 		rm -f "\$TMP_MANIFEST"
 
-		echo "Applied namespace-scoped API gateway to namespace '${namespace}' with host 'api.${deployDomain}'."
+		echo "Applied namespace-scoped API gateway to namespace '${namespace}' with host '${buildIngressHost('api', namespace, deployDomain)}'."
 	"""
 }
 
@@ -480,7 +489,7 @@ pipeline {
 							helm upgrade --install swagger-ui charts/swagger-ui \
 							  -n ${env.TEST_NAMESPACE} \
 							  -f ${env.HELM_SHARED_VALUES_FILE} \
-							  --set ingress.host=api.${env.DEPLOY_DOMAIN} \
+							  --set ingress.host=${buildIngressHost('api', env.TEST_NAMESPACE, env.DEPLOY_DOMAIN)} \
 							  --wait --timeout 5m
 						"""
 
