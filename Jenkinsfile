@@ -89,11 +89,22 @@ pipeline {
                 checkout scm
                 script {
                     env.BRANCH_NAME_RESOLVED = env.BRANCH_NAME ?: env.GIT_BRANCH ?: sh(script: 'git rev-parse --abbrev-ref HEAD', returnStdout: true).trim()
-                    // Lấy chính xác 8 ký tự mã Hash
+                    
+                    // Nếu branch name là 'HEAD', có nghĩa là Git đang ở trạng thái 'detached HEAD' (thường xảy ra khi checkout theo Tag).
+                    // Lúc này, ta cần dùng lệnh git để lấy tên Tag thực sự.
+                    if (env.BRANCH_NAME_RESOLVED == 'HEAD') {
+                        env.BRANCH_NAME_RESOLVED = sh(script: 'git describe --tags --exact-match 2>/dev/null || echo HEAD', returnStdout: true).trim()
+                    }
+
                     env.GIT_SHA = sh(script: 'git rev-parse --short=8 HEAD', returnStdout: true).trim()
                     env.IS_MAIN = (env.BRANCH_NAME_RESOLVED == 'main' || env.BRANCH_NAME_RESOLVED.endsWith('/main')).toString()
-                    env.IS_RELEASE = (env.TAG_NAME != null).toString()
-                    env.IMAGE_TAG = env.TAG_NAME ?: env.GIT_SHA
+                    
+                    // Nâng cấp logic nhận diện Release:
+                    // Hoặc TAG_NAME có giá trị, HOẶC tên nhánh hiện tại khớp với regex của một version tag (VD: v1.0.0, v2.1.3-rc1)
+                    def isTagFormat = env.BRANCH_NAME_RESOLVED ==~ /^v\d+\.\d+\.\d+.*$/
+                    env.IS_RELEASE = (env.TAG_NAME != null || isTagFormat).toString()
+                    
+                    env.IMAGE_TAG = env.TAG_NAME ?: (isTagFormat ? env.BRANCH_NAME_RESOLVED : env.GIT_SHA)
 
                     env.BACKEND_TO_BUILD = ""
                     env.FRONTEND_TO_BUILD = ""
