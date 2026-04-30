@@ -121,6 +121,7 @@ pipeline {
                         sh "mvn -B clean package -pl ${env.BACKEND_TO_BUILD} -am -DskipTests"
                     }
                     
+                    
                     // Chạy npm build tuần tự (vì nó share chung workspace Node)
                     // if (env.FRONTEND_TO_BUILD) {
                     //     def feList = env.FRONTEND_TO_BUILD.split(',')
