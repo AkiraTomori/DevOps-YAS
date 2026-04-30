@@ -456,14 +456,66 @@ pipeline {
 			steps {
 				script {
 					dir("${env.CHARTS_DIR}") {
+						
+						// =========================================================
+						// GIAI ĐOẠN 1: Deploy Prioritized Services (UI & BFF)
+						// Vẫn chạy trước, nhưng chạy SONG SONG 4 service cùng lúc
+						// =========================================================
 						def prioritizedServices = ['storefront-ui', 'storefront-bff', 'backoffice-ui', 'backoffice-bff']
-
-						echo "Deploying prioritized services first: ${prioritizedServices.join(', ')}"
+						echo "Deploying prioritized services in PARALLEL: ${prioritizedServices.join(', ')}"
+						
+						def prioritizedTasks = [:]
 						prioritizedServices.each { service ->
 							if (SERVICE_PARAM_MAP.containsKey(service)) {
+								def svc = service // Bind biến cục bộ để tránh lỗi closure trong Groovy
+								prioritizedTasks["Deploy ${svc}"] = {
+									deployService(
+										this,
+										svc,
+										env.TEST_NAMESPACE,
+										env.DEPLOY_DOMAIN,
+										env.HELM_SHARED_VALUES_FILE,
+										RESOLVED_TAG_BY_SERVICE,
+										RESOLVED_BRANCH_BY_SERVICE,
+										SERVICE_IMAGE_KEY_MAP,
+										FRONTEND_ENTRY_SERVICES
+									)
+								}
+							}
+						}
+						// Lệnh này bắt Jenkins chạy 4 task cùng lúc và chờ cả 4 xong mới đi tiếp
+						parallel prioritizedTasks
+
+
+						// =========================================================
+						// GIAI ĐOẠN 2: Deploy Swagger UI
+						// Vẫn chạy ở giữa (sau Prioritized và trước Remaining)
+						// =========================================================
+						echo "Deploying swagger-ui..."
+						sh """
+							helm dependency build charts/swagger-ui
+							helm upgrade --install swagger-ui charts/swagger-ui \
+							  -n ${env.TEST_NAMESPACE} \
+							  -f ${env.HELM_SHARED_VALUES_FILE} \
+							  --set ingress.host=api.${env.DEPLOY_DOMAIN} \
+							  --wait --timeout 10m
+						"""
+
+
+						// =========================================================
+						// GIAI ĐOẠN 3: Deploy Remaining Services (Backend)
+						// Chạy toàn bộ ~14 service backend SONG SONG cùng lúc
+						// =========================================================
+						def remainingServices = SERVICE_PARAM_MAP.keySet().findAll { !prioritizedServices.contains(it) }
+						echo "Deploying remaining services in PARALLEL: ${remainingServices.join(', ')}"
+						
+						def remainingTasks = [:]
+						remainingServices.each { service ->
+							def svc = service // Bind biến cục bộ
+							remainingTasks["Deploy ${svc}"] = {
 								deployService(
 									this,
-									service,
+									svc,
 									env.TEST_NAMESPACE,
 									env.DEPLOY_DOMAIN,
 									env.HELM_SHARED_VALUES_FILE,
@@ -474,31 +526,8 @@ pipeline {
 								)
 							}
 						}
-
-						sh """
-							helm dependency build charts/swagger-ui
-							helm upgrade --install swagger-ui charts/swagger-ui \
-							  -n ${env.TEST_NAMESPACE} \
-							  -f ${env.HELM_SHARED_VALUES_FILE} \
-							  --set ingress.host=api.${env.DEPLOY_DOMAIN} \
-							  --wait --timeout 10m
-						"""
-
-						def remainingServices = SERVICE_PARAM_MAP.keySet().findAll { !prioritizedServices.contains(it) }
-						echo "Deploying remaining services: ${remainingServices.join(', ')}"
-						remainingServices.each { service ->
-							deployService(
-								this,
-								service,
-								env.TEST_NAMESPACE,
-								env.DEPLOY_DOMAIN,
-								env.HELM_SHARED_VALUES_FILE,
-								RESOLVED_TAG_BY_SERVICE,
-								RESOLVED_BRANCH_BY_SERVICE,
-								SERVICE_IMAGE_KEY_MAP,
-								FRONTEND_ENTRY_SERVICES
-							)
-						}
+						// Kích hoạt chạy song song toàn bộ backend
+						parallel remainingTasks
 					}
 				}
 			}
