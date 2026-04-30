@@ -122,16 +122,16 @@ pipeline {
                     }
                     
                     // Chạy npm build tuần tự (vì nó share chung workspace Node)
-                    if (env.FRONTEND_TO_BUILD) {
-                        def feList = env.FRONTEND_TO_BUILD.split(',')
-                        feList.each { svc ->
-                            def config = VALID_FRONTEND_SERVICES[svc]
-                            dir(config.dir) {
-                                echo "Building Frontend: ${svc}"
-                                sh "npm install && npm run build"
-                            }
-                        }
-                    }
+                    // if (env.FRONTEND_TO_BUILD) {
+                    //     def feList = env.FRONTEND_TO_BUILD.split(',')
+                    //     feList.each { svc ->
+                    //         def config = VALID_FRONTEND_SERVICES[svc]
+                    //         dir(config.dir) {
+                    //             echo "Building Frontend: ${svc}"
+                    //             sh "npm install && npm run build"
+                    //         }
+                    //     }
+                    // }
                 }
             }
         }
