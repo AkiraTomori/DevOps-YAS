@@ -101,7 +101,12 @@ pipeline {
                     if (env.IS_MAIN.toBoolean()) {
                         env.BACKEND_TO_BUILD = VALID_BACKEND_SERVICES.join(',')
                         env.FRONTEND_TO_BUILD = VALID_FRONTEND_SERVICES.keySet().join(',')
-                    } else {
+                    }
+                    else if (env.IS_RELEASE.toBoolean()) {
+                        env.BACKEND_TO_BUILD = VALID_BACKEND_SERVICES.join(',')
+                        env.FRONTEND_TO_BUILD = VALID_FRONTEND_SERVICES.keySet().join(',')
+                    }
+                    else {
                         def target = env.BRANCH_NAME_RESOLVED.replaceFirst(/^dev_/, '').replaceFirst(/_service$/, '')
                         if (VALID_BACKEND_SERVICES.contains(target)) env.BACKEND_TO_BUILD = target
                         else if (VALID_FRONTEND_SERVICES.containsKey(target)) env.FRONTEND_TO_BUILD = target
