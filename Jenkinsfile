@@ -1,13 +1,12 @@
 /*
  * Jenkinsfile: CI/CD Monorepo - Parallel Build Backend & Frontend
- * GitOps Integration với ArgoCD
+ * Đã tối ưu hóa tốc độ: Gom Build Source - Song song Build Docker
  */
 
 def VALID_BACKEND_SERVICES = [
     'cart', 'customer', 'inventory', 'location', 'media', 'order', 
     'product', 'rating', 'search', 'tax', 'recommendation', 'payment', 
     'payment-paypal', 'sampledata', 'webhook', 'promotion', 'backoffice-bff', 'storefront-bff'
-    
 ]
 
 def VALID_FRONTEND_SERVICES = [
@@ -15,7 +14,7 @@ def VALID_FRONTEND_SERVICES = [
     'storefront-ui': [dir: 'storefront', image: 'yas-storefront']
 ]
 
-// Hàm ghi đè file YAML GitOps (Phân biệt backend và ui)
+// Hàm ghi đè file YAML GitOps
 def writeGitOpsServiceOverride(String environmentName, String service, String tag, String imageRoot) {
     def filePath = "environments/${environmentName}/services/${service}.yaml"
     def cfg = fileExists(filePath) ? (readYaml(file: filePath) ?: [:]) : [:]
@@ -68,7 +67,7 @@ def retagAndPushImage(String imageName, String sourceTag, String targetTag) {
 }
 
 pipeline {
-    agent any
+    agent any // Chạy toàn bộ trên 1 node để share Workspace
     options {
         timestamps()
         disableConcurrentBuilds()
@@ -85,106 +84,139 @@ pipeline {
     }
 
     stages {
-        stage('Checkout') {
-            steps { checkout scm }
-        }
-
-        stage('Detect Scope & Tag') {
+        stage('Checkout & Detect Scope') {
             steps {
+                checkout scm
                 script {
                     env.BRANCH_NAME_RESOLVED = env.BRANCH_NAME ?: env.GIT_BRANCH ?: sh(script: 'git rev-parse --abbrev-ref HEAD', returnStdout: true).trim()
-                    env.GIT_SHA = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+                    // Lấy chính xác 8 ký tự mã Hash
+                    env.GIT_SHA = sh(script: 'git rev-parse --short=8 HEAD', returnStdout: true).trim()
                     env.IS_MAIN = (env.BRANCH_NAME_RESOLVED == 'main' || env.BRANCH_NAME_RESOLVED.endsWith('/main')).toString()
                     env.IS_RELEASE = (env.TAG_NAME != null).toString()
                     env.IMAGE_TAG = env.TAG_NAME ?: env.GIT_SHA
+
+                    env.BACKEND_TO_BUILD = ""
+                    env.FRONTEND_TO_BUILD = ""
+
+                    if (env.IS_MAIN.toBoolean()) {
+                        env.BACKEND_TO_BUILD = VALID_BACKEND_SERVICES.join(',')
+                        env.FRONTEND_TO_BUILD = VALID_FRONTEND_SERVICES.keySet().join(',')
+                    } else {
+                        def target = env.BRANCH_NAME_RESOLVED.replaceFirst(/^dev_/, '').replaceFirst(/_service$/, '')
+                        if (VALID_BACKEND_SERVICES.contains(target)) env.BACKEND_TO_BUILD = target
+                        else if (VALID_FRONTEND_SERVICES.containsKey(target)) env.FRONTEND_TO_BUILD = target
+                        else error "Không xác định được service từ branch: ${env.BRANCH_NAME_RESOLVED}"
+                    }
                 }
             }
         }
 
-        stage('Build & Push Parallel') {
+        stage('Compile Source Code (Fast)') {
             when { expression { return env.IS_RELEASE.toBoolean() == false } }
             steps {
                 script {
-                    def backendToBuild = []
-                    def frontendToBuild = []
-
-                    if (env.IS_MAIN.toBoolean()) {
-                        backendToBuild = VALID_BACKEND_SERVICES
-                        frontendToBuild = VALID_FRONTEND_SERVICES.keySet() as List
-                    } else {
-                        // Nhận diện service từ branch (vd: dev_media_service hoặc dev_backoffice-ui_service)
-                        def target = env.BRANCH_NAME_RESOLVED.replaceFirst(/^dev_/, '').replaceFirst(/_service$/, '')
-                        if (VALID_BACKEND_SERVICES.contains(target)) backendToBuild = [target]
-                        else if (VALID_FRONTEND_SERVICES.containsKey(target)) frontendToBuild = [target]
-                        else error "Không xác định được service từ branch: ${env.BRANCH_NAME_RESOLVED}"
+                    // Chạy Maven 1 lần duy nhất cho toàn bộ các service cần build
+                    if (env.BACKEND_TO_BUILD) {
+                        echo "Building Maven modules: ${env.BACKEND_TO_BUILD}"
+                        sh "mvn -B clean package -pl ${env.BACKEND_TO_BUILD} -am -DskipTests"
                     }
-
-                    def tasks = [:]
-
-                    // Tạo task build Backend
-                    backendToBuild.each { svc ->
-                        tasks["Backend-${svc}"] = {
-                            node {
-                                stage("Build Backend ${svc}") {
-                                    checkout scm
-                                    sh "mvn -B clean package -pl ${svc} -am -DskipTests"
-                                    dir(svc) {
-                                        sh "docker build -t ${DOCKERHUB_USER}/yas-${svc}:${IMAGE_TAG} ."
-                                        withCredentials([usernamePassword(credentialsId: "${DOCKER_CREDENTIALS_ID}", usernameVariable: 'U', passwordVariable: 'P')]) {
-                                            sh 'echo "$P" | docker login -u "$U" --password-stdin'
-                                            sh "docker push ${DOCKERHUB_USER}/yas-${svc}:${IMAGE_TAG}"
-                                        }
-                                    }
-                                }
+                    
+                    // Chạy npm build tuần tự (vì nó share chung workspace Node)
+                    if (env.FRONTEND_TO_BUILD) {
+                        def feList = env.FRONTEND_TO_BUILD.split(',')
+                        feList.each { svc ->
+                            def config = VALID_FRONTEND_SERVICES[svc]
+                            dir(config.dir) {
+                                echo "Building Frontend: ${svc}"
+                                sh "npm install && npm run build"
                             }
                         }
                     }
-
-                    // Tạo task build Frontend
-                    frontendToBuild.each { svc ->
-                        tasks["Frontend-${svc}"] = {
-                            node {
-                                stage("Build Frontend ${svc}") {
-                                    checkout scm
-                                    def config = VALID_FRONTEND_SERVICES[svc]
-                                    dir(config.dir) {
-                                        sh "npm install && npm run build" // Bỏ qua test/lint
-                                        sh "docker build -t ${DOCKERHUB_USER}/${config.image}:${IMAGE_TAG} ."
-                                        withCredentials([usernamePassword(credentialsId: "${DOCKER_CREDENTIALS_ID}", usernameVariable: 'U', passwordVariable: 'P')]) {
-                                            sh 'echo "$P" | docker login -u "$U" --password-stdin'
-                                            sh "docker push ${DOCKERHUB_USER}/${config.image}:${IMAGE_TAG}"
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    parallel tasks
                 }
             }
         }
 
-        stage('CD Dev Update') {
+        stage('Build & Push Docker (Parallel)') {
+            when { expression { return env.IS_RELEASE.toBoolean() == false } }
+            steps {
+                script {
+                    def dockerTasks = [:]
+
+                    // Tách Backend Docker build
+                    if (env.BACKEND_TO_BUILD) {
+                        def beList = env.BACKEND_TO_BUILD.split(',')
+                        beList.each { svc ->
+                            dockerTasks["Docker-${svc}"] = {
+                                dir(svc) {
+                                    sh "docker build -t ${DOCKERHUB_USER}/yas-${svc}:${IMAGE_TAG} ."
+                                    withCredentials([usernamePassword(credentialsId: "${DOCKER_CREDENTIALS_ID}", usernameVariable: 'U', passwordVariable: 'P')]) {
+                                        sh 'echo "$P" | docker login -u "$U" --password-stdin'
+                                        sh "docker push ${DOCKERHUB_USER}/yas-${svc}:${IMAGE_TAG}"
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Tách Frontend Docker build
+                    if (env.FRONTEND_TO_BUILD) {
+                        def feList = env.FRONTEND_TO_BUILD.split(',')
+                        feList.each { svc ->
+                            def config = VALID_FRONTEND_SERVICES[svc]
+                            dockerTasks["Docker-${svc}"] = {
+                                dir(config.dir) {
+                                    sh "docker build -t ${DOCKERHUB_USER}/${config.image}:${IMAGE_TAG} ."
+                                    withCredentials([usernamePassword(credentialsId: "${DOCKER_CREDENTIALS_ID}", usernameVariable: 'U', passwordVariable: 'P')]) {
+                                        sh 'echo "$P" | docker login -u "$U" --password-stdin'
+                                        sh "docker push ${DOCKERHUB_USER}/${config.image}:${IMAGE_TAG}"
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Chạy song song Docker Build trên cùng 1 workspace (cực nhanh)
+                    parallel dockerTasks
+                }
+            }
+        }
+
+        stage('CD Dev Update (Parallel Retag)') {
             when { expression { return env.IS_MAIN.toBoolean() } }
             steps {
                 script {
-                    // Retag sang 'main' cho tất cả
-                    VALID_BACKEND_SERVICES.each { retagAndPushImage("yas-${it}", env.IMAGE_TAG, 'latest') }
-                    VALID_FRONTEND_SERVICES.each { k, v -> retagAndPushImage(v.image, env.IMAGE_TAG, 'latest') }
+                    def retagTasks = [:]
+                    
+                    VALID_BACKEND_SERVICES.each { svc ->
+                        retagTasks["Retag-${svc}"] = { retagAndPushImage("yas-${svc}", env.IMAGE_TAG, 'latest') }
+                    }
+                    VALID_FRONTEND_SERVICES.each { k, v ->
+                        retagTasks["Retag-${k}"] = { retagAndPushImage(v.image, env.IMAGE_TAG, 'latest') }
+                    }
+                    
+                    // Thực hiện Retag 20 image cùng 1 lúc thay vì chờ từng cái
+                    parallel retagTasks
 
                     updateGitOpsRepo('dev', env.IMAGE_TAG, VALID_BACKEND_SERVICES, VALID_FRONTEND_SERVICES.keySet() as List)
                 }
             }
         }
 
-        stage('CD Staging Update') {
+        stage('CD Staging Update (Parallel Retag)') {
             when { expression { return env.IS_RELEASE.toBoolean() } }
             steps {
                 script {
-                    // Lấy từ main retag sang tag version
-                    VALID_BACKEND_SERVICES.each { retagAndPushImage("yas-${it}", 'latest', env.IMAGE_TAG) }
-                    VALID_FRONTEND_SERVICES.each { k, v -> retagAndPushImage(v.image, 'latest', env.IMAGE_TAG) }
+                    def retagTasks = [:]
+                    
+                    VALID_BACKEND_SERVICES.each { svc ->
+                        retagTasks["Retag-${svc}"] = { retagAndPushImage("yas-${svc}", 'latest', env.IMAGE_TAG) }
+                    }
+                    VALID_FRONTEND_SERVICES.each { k, v ->
+                        retagTasks["Retag-${k}"] = { retagAndPushImage(v.image, 'latest', env.IMAGE_TAG) }
+                    }
+                    
+                    // Thực hiện Retag 20 image cùng 1 lúc
+                    parallel retagTasks
 
                     updateGitOpsRepo('staging', env.IMAGE_TAG, VALID_BACKEND_SERVICES, VALID_FRONTEND_SERVICES.keySet() as List)
                 }
