@@ -400,7 +400,7 @@ pipeline {
 			}
 		}
 
-		stage('Deploy Shared Configuration (from ArgoCD-Advanced)') {
+		stage('Deploy Shared Configuration') {
 			steps {
 				dir("${env.CHARTS_DIR}") {
 					sh """
@@ -414,7 +414,7 @@ pipeline {
 			}
 		}
 
-		stage('Load Deploy Domain (from values-shared.yaml)') {
+		stage('Load Deploy Domain') {
 			steps {
 				script {
 					env.DEPLOY_DOMAIN = sh(
@@ -431,7 +431,7 @@ pipeline {
 			}
 		}
 
-		stage('Validate Domain Consistency (legacy cluster-config)') {
+		stage('Validate Domain Consistency') {
 			steps {
 				script {
 					def legacyDomain = sh(
@@ -452,7 +452,7 @@ pipeline {
 			}
 		}
 
-		stage('Deploy Services (from ArgoCD-Advanced)') {
+		stage('Deploy Services') {
 			steps {
 				script {
 					dir("${env.CHARTS_DIR}") {
