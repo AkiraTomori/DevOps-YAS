@@ -1,8 +1,3 @@
-/*
- * Jenkinsfile: CI/CD Monorepo - Parallel Build Backend & Frontend
- * Đã tối ưu hóa tốc độ: Gom Build Source - Song song Build Docker
- */
-
 def VALID_BACKEND_SERVICES = [
     'cart', 'customer', 'inventory', 'location', 'media', 'order', 
     'product', 'rating', 'search', 'tax', 'recommendation', 'payment', 
@@ -14,7 +9,6 @@ def VALID_FRONTEND_SERVICES = [
     'storefront-ui': [dir: 'storefront', image: 'yas-storefront']
 ]
 
-// Hàm ghi đè file YAML GitOps
 def writeGitOpsServiceOverride(String environmentName, String service, String tag, String imageRoot) {
     def filePath = "environments/${environmentName}/services/${service}.yaml"
     def cfg = fileExists(filePath) ? (readYaml(file: filePath) ?: [:]) : [:]
@@ -52,7 +46,6 @@ def updateGitOpsRepo(String envName, String imageTag, List backendSvcs, List fro
     }
 }
 
-// Hàm Retag Image cho cả Backend & Frontend
 def retagAndPushImage(String imageName, String sourceTag, String targetTag) {
     withCredentials([usernamePassword(credentialsId: env.DOCKER_CREDENTIALS_ID, usernameVariable: 'U', passwordVariable: 'P')]) {
         def source = "${env.DOCKERHUB_USER}/${imageName}:${sourceTag}"
@@ -67,7 +60,7 @@ def retagAndPushImage(String imageName, String sourceTag, String targetTag) {
 }
 
 pipeline {
-    agent any // Chạy toàn bộ trên 1 node để share Workspace
+    agent any
     options {
         timestamps()
         disableConcurrentBuilds()
@@ -127,23 +120,10 @@ pipeline {
             when { expression { return env.IS_RELEASE.toBoolean() == false } }
             steps {
                 script {
-                    // Chạy Maven 1 lần duy nhất cho toàn bộ các service cần build
                     if (env.BACKEND_TO_BUILD) {
                         echo "Building Maven modules: ${env.BACKEND_TO_BUILD}"
                         sh "mvn -B clean package -pl ${env.BACKEND_TO_BUILD} -am -DskipTests"
                     }
-                    
-                    // Chạy npm build tuần tự (vì nó share chung workspace Node)
-                    // if (env.FRONTEND_TO_BUILD) {
-                    //     def feList = env.FRONTEND_TO_BUILD.split(',')
-                    //     feList.each { svc ->
-                    //         def config = VALID_FRONTEND_SERVICES[svc]
-                    //         dir(config.dir) {
-                    //             echo "Building Frontend: ${svc}"
-                    //             sh "npm install && npm run build"
-                    //         }
-                    //     }
-                    // }
                 }
             }
         }
@@ -154,7 +134,6 @@ pipeline {
                 script {
                     def dockerTasks = [:]
 
-                    // Tách Backend Docker build
                     if (env.BACKEND_TO_BUILD) {
                         def beList = env.BACKEND_TO_BUILD.split(',')
                         beList.each { svc ->
@@ -170,7 +149,6 @@ pipeline {
                         }
                     }
 
-                    // Tách Frontend Docker build
                     if (env.FRONTEND_TO_BUILD) {
                         def feList = env.FRONTEND_TO_BUILD.split(',')
                         feList.each { svc ->
@@ -187,7 +165,6 @@ pipeline {
                         }
                     }
 
-                    // Chạy song song Docker Build trên cùng 1 workspace (cực nhanh)
                     parallel dockerTasks
                 }
             }
@@ -206,7 +183,6 @@ pipeline {
                         retagTasks["Retag-${k}"] = { retagAndPushImage(v.image, env.IMAGE_TAG, 'latest') }
                     }
                     
-                    // Thực hiện Retag 20 image cùng 1 lúc thay vì chờ từng cái
                     parallel retagTasks
 
                     updateGitOpsRepo('dev', env.IMAGE_TAG, VALID_BACKEND_SERVICES, VALID_FRONTEND_SERVICES.keySet() as List)
@@ -227,7 +203,6 @@ pipeline {
                         retagTasks["Retag-${k}"] = { retagAndPushImage(v.image, 'latest', env.IMAGE_TAG) }
                     }
                     
-                    // Thực hiện Retag 20 image cùng 1 lúc
                     parallel retagTasks
 
                     updateGitOpsRepo('staging', env.IMAGE_TAG, VALID_BACKEND_SERVICES, VALID_FRONTEND_SERVICES.keySet() as List)
