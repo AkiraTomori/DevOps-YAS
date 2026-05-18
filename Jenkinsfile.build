@@ -111,9 +111,9 @@ def printDomainInstructions(String deployDomain) {
     echo "------------------------------------------------"
     echo ""
     echo "After saving the hosts file, access the test environment using the following links:"
-    echo "👉 API Gateway:    http://api.${deployDomain}/swagger-ui"
-    echo "👉 Storefront UI:  http://storefront.${deployDomain}"
-    echo "👉 Backoffice UI:  http://backoffice.${deployDomain}"
+    echo "API Gateway:    http://api.${deployDomain}/swagger-ui"
+    echo "Storefront UI:  http://storefront.${deployDomain}"
+    echo "Backoffice UI:  http://backoffice.${deployDomain}"
     echo "=========================================================================="
 }
 
