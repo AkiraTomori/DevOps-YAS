@@ -12,7 +12,6 @@ import groovy.transform.Field
 	inventory       : 'TAG_INVENTORY',
 	search          : 'TAG_SEARCH',
 	payment         : 'TAG_PAYMENT',
-	// 'payment-paypal': 'TAG_PAYMENT_PAYPAL',
 	promotion       : 'TAG_PROMOTION',
 	recommendation  : 'TAG_RECOMMENDATION',
 	sampledata      : 'TAG_SAMPLEDATA',
@@ -53,7 +52,7 @@ def validateBranchName(String branchName) {
 		return
 	}
 
-	if (!(branchName ==~ /^[A-Za-z0-9._\/-]+$/)) {
+	if (!(branchName ==~ /^[A-Za-z0-9._\\/-]+$/)) {
 		error("Invalid branch name '${branchName}'. Allowed characters: letters, numbers, '.', '_', '-', '/'.")
 	}
 }
@@ -82,47 +81,40 @@ def resolveBranchToShortCommit(String repositoryUrl, String branchName) {
 	return commitSha.take(8)
 }
 
-def resolveNodeAddress() {
-    def nodeAddress = sh(
-        script: "kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type==\"InternalIP\")].address}'",
+def printDomainInstructions(String deployDomain) {
+    def publicIp = sh(
+        script: "curl -s ifconfig.me || curl -s icanhazip.com",
+        returnStdout: true
+    ).trim() ?: '127.0.0.1'
+
+    def minikubeIp = sh(
+        script: "kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type==\"InternalIP\")].address}' || true",
         returnStdout: true
     ).trim()
-	
-    return nodeAddress ?: 'localhost'
-}
 
-def resolveServiceNodePort(String namespace, String serviceName) {
-	return sh(
-		script: "kubectl get svc ${serviceName} -n ${namespace} -o jsonpath='{.spec.ports[0].nodePort}' || true",
-		returnStdout: true
-	).trim()
-}
-
-def printNodePortUrls(String namespace, List<String> backendServices) {
-	def nodeAddress = resolveNodeAddress()
-	def printedServices = [] as Set
-
-	def servicesToPrint = []
-	servicesToPrint.addAll(FRONTEND_ENTRY_SERVICES)
-	servicesToPrint.addAll(backendServices)
-
-	echo "Node address for URL output: ${nodeAddress}"
-	echo "If your hosts file maps yas.test.com -> ${nodeAddress}, use URLs below with yas.test.com:<NodePort>."
-
-	servicesToPrint.each { serviceName ->
-		if (printedServices.contains(serviceName)) {
-			return
-		}
-
-		def nodePort = resolveServiceNodePort(namespace, serviceName)
-		if (nodePort) {
-			echo "ACCESS URL [${serviceName}] (IP): http://${nodeAddress}:${nodePort}"
-			echo "ACCESS URL [${serviceName}] (DOMAIN): http://yas.test.com:${nodePort}"
-			printedServices << serviceName
-		} else {
-			echo "ACCESS URL [${serviceName}]: NodePort not found (service may not be ready)."
-		}
-	}
+    echo "=========================================================================="
+    echo "How to Access the Test Environment"
+    echo "=========================================================================="
+    echo "Your services are deployed with the domain: ${deployDomain}"
+    echo "- Internal IP of Minikube: ${minikubeIp}"
+    echo "- Public IP of the VM: ${publicIp}"
+    echo ""
+    echo "PLEASE CONFIGURE THE HOSTS FILE ON YOUR LOCAL MACHINE:"
+    echo "- Windows: C:\\Windows\\System32\\drivers\\etc\\hosts"
+    echo "- MacOS/Linux: /etc/hosts"
+    echo ""
+    echo "Please add the following entries to your hosts file to access the services:"
+    echo "------------------------------------------------"
+    echo "${publicIp}    api.${deployDomain}"
+    echo "${publicIp}    storefront.${deployDomain}"
+    echo "${publicIp}    backoffice.${deployDomain}"
+    echo "------------------------------------------------"
+    echo ""
+    echo "After saving the hosts file, access the test environment using the following links:"
+    echo "👉 API Gateway:    http://api.${deployDomain}"
+    echo "👉 Storefront UI:  http://storefront.${deployDomain}"
+    echo "👉 Backoffice UI:  http://backoffice.${deployDomain}"
+    echo "=========================================================================="
 }
 
 def deployService(
@@ -140,7 +132,6 @@ def deployService(
 	def branchName = resolvedBranchByService[service]
 	def imageKey = serviceImageKeyMap.get(service, 'backend')
 	def isUiService = serviceImageKeyMap.containsKey(service)
-	def shouldExposeNodePort = (resolvedTag != 'latest') || frontendEntryServices.contains(service)
 
 	def ingressHost = 'api.' + deployDomain
 	if (service == 'backoffice-bff') {
@@ -153,50 +144,25 @@ def deployService(
 		scriptCtx.error("Missing resolved tag for service '${service}'.")
 	}
 
-	if (!shouldExposeNodePort) {
-		if (isUiService) {
-			scriptCtx.sh """
-				helm dependency build charts/${service}
-				helm upgrade --install ${service} charts/${service} \
-				  -n ${testNamespace} \
-				  -f ${sharedValuesFile} \
-				  --set ${imageKey}.image.tag=${resolvedTag} \
-				  --wait --timeout 10m
-			"""
-		} else {
-			scriptCtx.sh """
-				helm dependency build charts/${service}
-				helm upgrade --install ${service} charts/${service} \
-				  -n ${testNamespace} \
-				  -f ${sharedValuesFile} \
-				  --set ${imageKey}.image.tag=${resolvedTag} \
-				  --set backend.ingress.host=${ingressHost} \
-				  --wait --timeout 10m	
-			"""
-		}
+	if (isUiService) {
+		scriptCtx.sh """
+			helm dependency build charts/${service}
+			helm upgrade --install ${service} charts/${service} \\
+			  -n ${testNamespace} \\
+			  -f ${sharedValuesFile} \\
+			  --set ${imageKey}.image.tag=${resolvedTag} \\
+			  --wait --timeout 10m
+		"""
 	} else {
-		if (isUiService) {
-			scriptCtx.sh """
-				helm dependency build charts/${service}
-				helm upgrade --install ${service} charts/${service} \
-				  -n ${testNamespace} \
-				  -f ${sharedValuesFile} \
-				  --set ${imageKey}.image.tag=${resolvedTag} \
-				  --set ${imageKey}.service.type=NodePort \
-				  --wait --timeout 10m
-			"""
-		} else {
-			scriptCtx.sh """
-				helm dependency build charts/${service}
-				helm upgrade --install ${service} charts/${service} \
-				  -n ${testNamespace} \
-				  -f ${sharedValuesFile} \
-				  --set ${imageKey}.image.tag=${resolvedTag} \
-				  --set backend.ingress.host=${ingressHost} \
-				  --set ${imageKey}.service.type=NodePort \
-				  --wait --timeout 10m
-			"""
-		}
+		scriptCtx.sh """
+			helm dependency build charts/${service}
+			helm upgrade --install ${service} charts/${service} \\
+			  -n ${testNamespace} \\
+			  -f ${sharedValuesFile} \\
+			  --set ${imageKey}.image.tag=${resolvedTag} \\
+			  --set backend.ingress.host=${ingressHost} \\
+			  --wait --timeout 10m	
+		"""
 	}
 
 	scriptCtx.echo("Deployed ${service} from branch '${branchName}' with image tag '${resolvedTag}'.")
@@ -270,7 +236,6 @@ pipeline {
 		string(name: 'TAG_INVENTORY', defaultValue: 'main', description: 'Input branch name for inventory (e.g., main, dev_inventory_service)')
 		string(name: 'TAG_SEARCH', defaultValue: 'main', description: 'Input branch name for search (e.g., main, dev_search_service)')
 		string(name: 'TAG_PAYMENT', defaultValue: 'main', description: 'Input branch name for payment (e.g., main, dev_payment_service)')
-		string(name: 'TAG_PAYMENT_PAYPAL', defaultValue: 'main', description: 'Input branch name for payment-paypal (e.g., main, dev_payment-paypal_service)')
 		string(name: 'TAG_PROMOTION', defaultValue: 'main', description: 'Input branch name for promotion (e.g., main, dev_promotion_service)')
 		string(name: 'TAG_RECOMMENDATION', defaultValue: 'main', description: 'Input branch name for recommendation (e.g., main, dev_recommendation_service)')
 		string(name: 'TAG_SAMPLEDATA', defaultValue: 'main', description: 'Input branch name for sampledata (e.g., main, dev_sampledata_service)')
@@ -405,9 +370,9 @@ pipeline {
 				dir("${env.CHARTS_DIR}") {
 					sh """
 						helm dependency build charts/yas-configuration
-						helm upgrade --install yas-configuration charts/yas-configuration \
-						  -n ${env.TEST_NAMESPACE} \
-						  -f ${env.HELM_SHARED_VALUES_FILE} \
+						helm upgrade --install yas-configuration charts/yas-configuration \\
+						  -n ${env.TEST_NAMESPACE} \\
+						  -f ${env.HELM_SHARED_VALUES_FILE} \\
 						  --wait --timeout 10m
 					"""
 				}
@@ -483,10 +448,10 @@ pipeline {
 						prioritizedTasks["Deploy swagger-ui"] = {
 							sh """
 								helm dependency build charts/swagger-ui
-								helm upgrade --install swagger-ui charts/swagger-ui \
-								  -n ${env.TEST_NAMESPACE} \
-								  -f ${env.HELM_SHARED_VALUES_FILE} \
-								  --set ingress.host=api.${env.DEPLOY_DOMAIN} \
+								helm upgrade --install swagger-ui charts/swagger-ui \\
+								  -n ${env.TEST_NAMESPACE} \\
+								  -f ${env.HELM_SHARED_VALUES_FILE} \\
+								  --set ingress.host=api.${env.DEPLOY_DOMAIN} \\
 								  --wait --timeout 10m
 							"""
 						}
@@ -544,12 +509,12 @@ pipeline {
 		}
 		success {
 			script {
-				def backendChangedServices = NON_MAIN_SERVICES.findAll { !SERVICE_IMAGE_KEY_MAP.containsKey(it) }.unique()
-
 				echo "=========================================================================="
 				echo "DEPLOYMENT SUCCESSFUL!"
 				echo "Your test environment '${env.TEST_NAMESPACE}' is ready."
-				printNodePortUrls(env.TEST_NAMESPACE, backendChangedServices)
+                
+				printDomainInstructions(env.DEPLOY_DOMAIN)
+                
 				echo "To clean up this environment, click: ${env.CLEAN_JOB_URL}"
 				echo "=========================================================================="
 
