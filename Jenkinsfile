@@ -38,7 +38,7 @@ def updateGitOpsRepo(String envName, String imageTag, List backendSvcs, List fro
                 git config user.email "${env.GITOPS_COMMIT_EMAIL}"
                 git add environments/${envName}/services
                 if ! git diff --cached --quiet; then
-                    git commit -m "ci(${envName}): update images to ${imageTag} [skip ci]"
+                    git commit -m "ci(${envName}): update images to ${imageTag}"
                     git push origin HEAD:main
                 fi
             """
