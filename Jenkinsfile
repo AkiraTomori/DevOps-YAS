@@ -110,7 +110,7 @@ pipeline {
                         def target = env.BRANCH_NAME_RESOLVED.replaceFirst(/^dev_/, '').replaceFirst(/_service$/, '')
                         if (VALID_BACKEND_SERVICES.contains(target)) env.BACKEND_TO_BUILD = target
                         else if (VALID_FRONTEND_SERVICES.containsKey(target)) env.FRONTEND_TO_BUILD = target
-                        else error "Không xác định được service từ branch: ${env.BRANCH_NAME_RESOLVED}"
+                        else error "Cannot determine service from branch: ${env.BRANCH_NAME_RESOLVED}"
                     }
                 }
             }
