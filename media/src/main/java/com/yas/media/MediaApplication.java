@@ -11,7 +11,6 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 public class MediaApplication {
     // Hello World
     // Hello World
-    // Hello World
 
     
     public static void main(String[] args) {
